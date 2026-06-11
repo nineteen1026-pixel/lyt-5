@@ -378,26 +378,59 @@ function handleShoppingAdd() {
 }
 
 function handlePurchased(item) {
-  shoppingStore.togglePurchased(item.id)
-  if (!item.purchased) {
-    fridgeStore.addItem({
+  let linkedFridgeItemId = null
+  let originalQuantity = null
+  let originalExpiryDate = null
+
+  if (item.fromExpiring && item.fridgeItemId) {
+    const originalItem = fridgeStore.getItemById(item.fridgeItemId)
+    if (originalItem) {
+      originalQuantity = originalItem.quantity
+      originalExpiryDate = originalItem.expiryDate
+      fridgeStore.updateItem(item.fridgeItemId, {
+        quantity: originalItem.quantity + item.quantity,
+        expiryDate: getDefaultDate()
+      })
+      linkedFridgeItemId = item.fridgeItemId
+    }
+  }
+
+  if (linkedFridgeItemId === null) {
+    const newFridgeItem = fridgeStore.addItem({
       name: item.name,
       quantity: item.quantity,
       unit: item.unit,
       expiryDate: getDefaultDate(),
       zone: '冷藏'
     })
+    linkedFridgeItemId = newFridgeItem.id
   }
+
+  shoppingStore.setPurchased(item.id, true, {
+    linkedFridgeItemId,
+    originalQuantity,
+    originalExpiryDate
+  })
 }
 
 function undoPurchased(item) {
-  shoppingStore.togglePurchased(item.id)
-  const match = fridgeStore.items.find(
-    f => f.name === item.name && fridgeStore.daysUntilExpiry(f.expiryDate) >= 0
-  )
-  if (match) {
-    fridgeStore.removeItem(match.id)
+  if (item.fromExpiring && item.fridgeItemId && item.originalQuantity !== null) {
+    const originalItem = fridgeStore.getItemById(item.fridgeItemId)
+    if (originalItem) {
+      fridgeStore.updateItem(item.fridgeItemId, {
+        quantity: item.originalQuantity,
+        expiryDate: item.originalExpiryDate
+      })
+    }
+  } else if (item.linkedFridgeItemId) {
+    fridgeStore.removeItem(item.linkedFridgeItemId)
   }
+
+  shoppingStore.setPurchased(item.id, false, {
+    linkedFridgeItemId: null,
+    originalQuantity: null,
+    originalExpiryDate: null
+  })
 }
 
 function clearPurchasedItems() {

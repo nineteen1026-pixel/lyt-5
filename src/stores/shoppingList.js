@@ -44,6 +44,9 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
       purchased: false,
       fromExpiring: itemData.fromExpiring || false,
       fridgeItemId: itemData.fridgeItemId || null,
+      linkedFridgeItemId: null,
+      originalQuantity: null,
+      originalExpiryDate: null,
       createdAt: new Date().toISOString()
     }
     list.value.push(newItem)
@@ -61,6 +64,17 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
     const item = list.value.find(item => item.id === id)
     if (item) {
       item.purchased = !item.purchased
+    }
+  }
+
+  function setPurchased(id, value, extra = {}) {
+    const index = list.value.findIndex(item => item.id === id)
+    if (index !== -1) {
+      list.value[index] = {
+        ...list.value[index],
+        purchased: value,
+        ...extra
+      }
     }
   }
 
@@ -101,6 +115,7 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
     addItem,
     removeItem,
     togglePurchased,
+    setPurchased,
     updateItem,
     clearPurchased,
     addFromExpiring
