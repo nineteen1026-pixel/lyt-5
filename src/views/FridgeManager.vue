@@ -491,7 +491,15 @@ function hasIngredient(ingredientName) {
 }
 
 .stat-item.warning {
-  border-top: 3px solid #ff9800;
+  border-top: 3px solid #f44336;
+}
+
+.stat-item.warning .stat-num {
+  color: #d32f2f;
+}
+
+.stat-item.warning .stat-label {
+  color: #e53935;
 }
 
 .stat-item.danger {
@@ -560,8 +568,10 @@ function hasIngredient(ingredientName) {
 }
 
 .item-card.expiring-soon {
-  background: #fff8e1;
-  border-color: #ffb74d;
+  background: #ffebee;
+  border-color: #ef5350;
+  border-width: 2px;
+  box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.15);
 }
 
 .item-card.expired {
@@ -616,9 +626,10 @@ function hasIngredient(ingredientName) {
 }
 
 .badge.warning {
-  background: #fff3e0;
-  color: #e65100;
-  font-weight: 500;
+  background: #fdecea;
+  color: #c62828;
+  font-weight: 600;
+  border: 1px solid #ef9a9a;
 }
 
 .badge.expired {
