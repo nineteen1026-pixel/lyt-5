@@ -103,6 +103,83 @@
             </div>
           </div>
         </div>
+
+        <div class="shopping-list card">
+          <h2>🛒 购物清单</h2>
+          <div class="shopping-add-form">
+            <div class="shopping-form-row">
+              <input
+                v-model="shoppingForm.name"
+                type="text"
+                placeholder="添加采购项"
+                @keyup.enter="handleShoppingAdd"
+              />
+              <input
+                v-model.number="shoppingForm.quantity"
+                type="number"
+                min="1"
+                step="0.1"
+                class="shopping-qty-input"
+              />
+              <select v-model="shoppingForm.unit" class="shopping-unit-select">
+                <option value="个">个</option>
+                <option value="斤">斤</option>
+                <option value="克">克</option>
+                <option value="袋">袋</option>
+                <option value="盒">盒</option>
+                <option value="瓶">瓶</option>
+              </select>
+              <button class="btn btn-shopping-add" @click="handleShoppingAdd">➕</button>
+            </div>
+          </div>
+          <div class="shopping-tabs">
+            <button
+              class="shopping-tab"
+              :class="{ active: shoppingTab === 'pending' }"
+              @click="shoppingTab = 'pending'"
+            >
+              待购 ({{ shoppingStore.pendingCount }})
+            </button>
+            <button
+              class="shopping-tab"
+              :class="{ active: shoppingTab === 'purchased' }"
+              @click="shoppingTab = 'purchased'"
+            >
+              已购 ({{ shoppingStore.purchasedItems.length }})
+            </button>
+          </div>
+          <div v-if="displayShoppingItems.length === 0" class="empty-tip">
+            {{ shoppingTab === 'pending' ? '购物清单为空' : '暂无已购项' }}
+          </div>
+          <div v-else class="shopping-items">
+            <div
+              v-for="item in displayShoppingItems"
+              :key="item.id"
+              class="shopping-item"
+              :class="{ purchased: item.purchased, 'from-expiring': item.fromExpiring }"
+            >
+              <div class="shopping-item-left">
+                <input
+                  type="checkbox"
+                  :checked="item.purchased"
+                  class="shopping-checkbox"
+                  @change="item.purchased ? undoPurchased(item) : handlePurchased(item)"
+                />
+                <span class="shopping-item-name">{{ item.name }}</span>
+                <span v-if="item.fromExpiring" class="badge-from-expiring">临期</span>
+              </div>
+              <div class="shopping-item-right">
+                <span class="shopping-item-qty">{{ item.quantity }} {{ item.unit }}</span>
+                <button class="btn btn-small btn-danger" @click="shoppingStore.removeItem(item.id)">✕</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="shoppingStore.purchasedItems.length > 0" class="shopping-footer">
+            <button class="btn btn-small btn-clear-purchased" @click="clearPurchasedItems">
+              🗑 清除已购
+            </button>
+          </div>
+        </div>
       </section>
 
       <section class="right-section">
@@ -118,6 +195,10 @@
           <div class="stat-item danger">
             <span class="stat-num">{{ fridgeStore.expiredItems.length }}</span>
             <span class="stat-label">已过期</span>
+          </div>
+          <div class="stat-item shopping">
+            <span class="stat-num">{{ shoppingStore.pendingCount }}</span>
+            <span class="stat-label">待采购</span>
           </div>
         </div>
 
@@ -169,6 +250,13 @@
                 </span>
               </div>
               <div class="item-actions">
+                <button
+                  v-if="fridgeStore.isExpiringSoon(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate)"
+                  class="btn btn-small btn-shopping"
+                  @click="addToShoppingList(item)"
+                >
+                  🛒 补货
+                </button>
                 <button class="btn btn-small" @click="useItem(item)">
                   消耗
                 </button>
@@ -187,11 +275,15 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useFridgeStore } from '@/stores/fridge'
+import { useShoppingListStore } from '@/stores/shoppingList'
 import { getRecipeSuggestions } from '@/utils/recipes'
 
 const fridgeStore = useFridgeStore()
+const shoppingStore = useShoppingListStore()
 
 const activeZone = ref('全部')
+const shoppingTab = ref('pending')
+const shoppingForm = ref({ name: '', quantity: 1, unit: '个' })
 
 const form = ref({
   name: '',
@@ -210,6 +302,12 @@ const filteredItems = computed(() => {
     return fridgeStore.sortedItems
   }
   return fridgeStore.sortedItems.filter(item => item.zone === activeZone.value)
+})
+
+const displayShoppingItems = computed(() => {
+  return shoppingTab.value === 'pending'
+    ? shoppingStore.pendingItems
+    : shoppingStore.purchasedItems
 })
 
 function getDefaultDate() {
@@ -262,6 +360,50 @@ function hasIngredient(ingredientName) {
     item.name.toLowerCase().includes(ingredientName.toLowerCase()) ||
     ingredientName.toLowerCase().includes(item.name.toLowerCase())
   )
+}
+
+function addToShoppingList(item) {
+  shoppingStore.addFromExpiring(item)
+}
+
+function handleShoppingAdd() {
+  if (!shoppingForm.value.name.trim()) return
+  shoppingStore.addItem({
+    name: shoppingForm.value.name.trim(),
+    quantity: shoppingForm.value.quantity,
+    unit: shoppingForm.value.unit
+  })
+  shoppingForm.value.name = ''
+  shoppingForm.value.quantity = 1
+}
+
+function handlePurchased(item) {
+  shoppingStore.togglePurchased(item.id)
+  if (!item.purchased) {
+    fridgeStore.addItem({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      expiryDate: getDefaultDate(),
+      zone: '冷藏'
+    })
+  }
+}
+
+function undoPurchased(item) {
+  shoppingStore.togglePurchased(item.id)
+  const match = fridgeStore.items.find(
+    f => f.name === item.name && fridgeStore.daysUntilExpiry(f.expiryDate) >= 0
+  )
+  if (match) {
+    fridgeStore.removeItem(match.id)
+  }
+}
+
+function clearPurchasedItems() {
+  if (confirm('确定清除所有已购项吗？')) {
+    shoppingStore.clearPurchased()
+  }
 }
 </script>
 
@@ -478,7 +620,7 @@ function hasIngredient(ingredientName) {
 
 .stats-bar {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
@@ -504,6 +646,18 @@ function hasIngredient(ingredientName) {
 
 .stat-item.danger {
   border-top: 3px solid #f44336;
+}
+
+.stat-item.shopping {
+  border-top: 3px solid #00897b;
+}
+
+.stat-item.shopping .stat-num {
+  color: #00897b;
+}
+
+.stat-item.shopping .stat-label {
+  color: #00796b;
 }
 
 .stat-num {
@@ -650,9 +804,209 @@ function hasIngredient(ingredientName) {
   font-size: 14px;
 }
 
+.btn-shopping {
+  background: #e0f2f1;
+  color: #00695c;
+}
+
+.btn-shopping:hover {
+  background: #b2dfdb;
+}
+
+.shopping-list .shopping-add-form {
+  margin-bottom: 12px;
+}
+
+.shopping-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.shopping-form-row input[type="text"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.shopping-form-row input[type="text"]:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-qty-input {
+  width: 60px;
+  padding: 8px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.shopping-qty-input:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-unit-select {
+  width: 56px;
+  padding: 8px 4px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.shopping-unit-select:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.btn-shopping-add {
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #00897b, #26a69a);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-shopping-add:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 137, 123, 0.3);
+}
+
+.shopping-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border-bottom: 2px solid #eceff1;
+}
+
+.shopping-tab {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  color: #78909c;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.shopping-tab:hover {
+  color: #00897b;
+}
+
+.shopping-tab.active {
+  color: #00897b;
+  border-bottom-color: #00897b;
+  font-weight: 600;
+}
+
+.shopping-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.shopping-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  border: 1px solid #eceff1;
+  transition: all 0.2s;
+}
+
+.shopping-item:hover {
+  background: #eef5f4;
+}
+
+.shopping-item.purchased {
+  background: #e8f5e9;
+  border-color: #c8e6c9;
+}
+
+.shopping-item.purchased .shopping-item-name {
+  text-decoration: line-through;
+  color: #81c784;
+}
+
+.shopping-item.from-expiring {
+  border-left: 3px solid #ff9800;
+}
+
+.shopping-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shopping-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #00897b;
+  cursor: pointer;
+}
+
+.shopping-item-name {
+  font-size: 14px;
+  color: #263238;
+  font-weight: 500;
+}
+
+.badge-from-expiring {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: #fff3e0;
+  color: #e65100;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.shopping-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shopping-item-qty {
+  font-size: 13px;
+  color: #78909c;
+}
+
+.btn-clear-purchased {
+  background: #eceff1;
+  color: #78909c;
+}
+
+.btn-clear-purchased:hover {
+  background: #cfd8dc;
+  color: #455a64;
+}
+
+.shopping-footer {
+  margin-top: 12px;
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .main-content {
     grid-template-columns: 1fr;
+  }
+
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>
