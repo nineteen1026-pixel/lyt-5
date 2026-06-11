@@ -76,22 +76,43 @@
               v-for="(recipe, index) in suggestions"
               :key="index"
               class="recipe-item"
+              :class="{ 'has-expiring': recipe.expiringMatchCount > 0 }"
             >
               <div class="recipe-header">
-                <span class="recipe-name">{{ recipe.name }}</span>
-                <span class="recipe-match" v-if="recipe.matchCount">
-                  可用食材: {{ recipe.matchCount }}/{{ recipe.ingredients.length }}
-                </span>
+                <div class="recipe-title-row">
+                  <span class="recipe-name">{{ recipe.name }}</span>
+                  <span v-if="recipe.expiringMatchCount > 0" class="badge-expiring-priority">
+                    ⚡ 优先推荐
+                  </span>
+                </div>
+                <div class="recipe-meta">
+                  <span class="recipe-match" v-if="recipe.matchCount">
+                    可用食材: {{ recipe.matchCount }}/{{ recipe.ingredients.length }}
+                  </span>
+                  <span v-if="recipe.expiringMatchCount > 0" class="recipe-expiring-match">
+                    消耗临期: {{ recipe.expiringMatchCount }}
+                  </span>
+                </div>
               </div>
               <p class="recipe-desc">{{ recipe.description }}</p>
+              <div v-if="recipe.expiringMatchCount > 0" class="expiring-tip">
+                💡 可消耗临期食材：
+                <span v-for="(exp, i) in recipe.matchedExpiringIngredients" :key="exp.name">
+                  {{ exp.name }}(剩{{ exp.daysLeft }}天){{ i < recipe.matchedExpiringIngredients.length - 1 ? '、' : '' }}
+                </span>
+              </div>
               <div class="recipe-ingredients">
                 <span
                   v-for="ing in recipe.ingredients"
                   :key="ing.name"
                   class="ingredient-tag"
-                  :class="{ available: hasIngredient(ing.name) }"
+                  :class="{
+                    available: hasIngredient(ing.name),
+                    expiring: isExpiringIngredient(ing.name, recipe)
+                  }"
                 >
                   {{ ing.name }} {{ ing.quantity }}{{ ing.unit }}
+                  <span v-if="isExpiringIngredient(ing.name, recipe)" class="expiring-dot">⚠</span>
                 </span>
               </div>
               <div class="recipe-steps">
@@ -363,6 +384,15 @@ function hasIngredient(ingredientName) {
   )
 }
 
+function isExpiringIngredient(ingredientName, recipe) {
+  if (!recipe.matchedExpiringIngredients) return false
+  return recipe.matchedExpiringIngredients.some(
+    exp => exp.name === ingredientName ||
+           exp.name.toLowerCase().includes(ingredientName.toLowerCase()) ||
+           ingredientName.toLowerCase().includes(exp.name.toLowerCase())
+  )
+}
+
 function addToShoppingList(item) {
   shoppingStore.addFromExpiring(item)
 }
@@ -578,13 +608,61 @@ function clearPurchasedItems() {
   background: #f5f7fa;
   border-radius: 8px;
   border-left: 4px solid #ff9800;
+  transition: all 0.2s;
+}
+
+.recipe-item.has-expiring {
+  border-left-color: #f44336;
+  background: linear-gradient(135deg, #fff5f5 0%, #f5f7fa 100%);
+  box-shadow: 0 2px 8px rgba(244, 67, 54, 0.1);
 }
 
 .recipe-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 8px;
+}
+
+.recipe-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recipe-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-expiring-priority {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #ff7043, #f44336);
+  color: white;
+  border-radius: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recipe-expiring-match {
+  font-size: 12px;
+  color: #c62828;
+  background: #ffebee;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.expiring-tip {
+  font-size: 12px;
+  color: #bf360c;
+  background: #fbe9e7;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  line-height: 1.5;
 }
 
 .recipe-name {
@@ -625,6 +703,18 @@ function clearPurchasedItems() {
 .ingredient-tag.available {
   background: #c8e6c9;
   color: #2e7d32;
+}
+
+.ingredient-tag.expiring {
+  background: linear-gradient(135deg, #ffccbc, #ffab91);
+  color: #bf360c;
+  font-weight: 500;
+  position: relative;
+}
+
+.expiring-dot {
+  margin-left: 2px;
+  font-size: 10px;
 }
 
 .recipe-steps {

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { generateId } from '@/utils/storage'
-import { getTotalIngredients, getAllRecipes } from '@/utils/recipes'
+import { getTotalIngredients, getAllRecipes, getRecipeSuggestions } from '@/utils/recipes'
 
 const MEAL_PLAN_KEY = 'meal_plan'
 
@@ -168,10 +168,21 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
   function autoGenerateWeekPlan(fridgeItems) {
     clearWeek()
     const allRecipes = getAllRecipes()
-    const shuffled = [...allRecipes].sort(() => Math.random() - 0.5)
+    const suggestedRecipes = getRecipeSuggestions(fridgeItems, 14)
     
-    const dinnerRecipes = shuffled.slice(0, 7)
-    const lunchRecipes = shuffled.slice(0, 7).reverse()
+    const usedNames = new Set()
+    const priorityRecipes = suggestedRecipes.filter(r => {
+      if (usedNames.has(r.name)) return false
+      usedNames.add(r.name)
+      return true
+    })
+    
+    const remaining = allRecipes.filter(r => !usedNames.has(r.name))
+    const shuffledRemaining = [...remaining].sort(() => Math.random() - 0.5)
+    const finalPool = [...priorityRecipes, ...shuffledRemaining]
+    
+    const dinnerRecipes = finalPool.slice(0, 7)
+    const lunchRecipes = finalPool.slice(7, 14).reverse()
     
     weekDates.value.forEach((date, index) => {
       if (dinnerRecipes[index]) {

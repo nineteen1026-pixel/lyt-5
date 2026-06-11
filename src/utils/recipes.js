@@ -1,3 +1,5 @@
+import { daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
+
 const recipes = [
   {
     name: '番茄炒蛋',
@@ -116,18 +118,70 @@ const recipes = [
 export function getRecipeSuggestions(fridgeItems, count = 2) {
   const ingredientNames = fridgeItems.map(item => item.name.toLowerCase())
 
+  const expiringItems = fridgeItems.filter(item =>
+    isExpiringSoon(item.expiryDate) && !isExpired(item.expiryDate)
+  )
+  const expiringNames = expiringItems.map(item => item.name.toLowerCase())
+
   const scoredRecipes = recipes.map(recipe => {
-    const matchCount = recipe.ingredients.filter(ing =>
-      ingredientNames.some(name => name.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(name))
-    ).length
+    const matchedIngredients = []
+    const matchedExpiringIngredients = []
+    let matchCount = 0
+    let expiringMatchCount = 0
+    let expiringUrgencyScore = 0
+
+    recipe.ingredients.forEach(ing => {
+      const ingName = ing.name.toLowerCase()
+      const matchedItem = fridgeItems.find(item => {
+        const n = item.name.toLowerCase()
+        return n.includes(ingName) || ingName.includes(n)
+      })
+
+      if (matchedItem) {
+        matchCount++
+        matchedIngredients.push(ing.name)
+
+        const isExpiring = expiringNames.some(en => {
+          const n = matchedItem.name.toLowerCase()
+          return n.includes(en) || en.includes(n)
+        })
+
+        if (isExpiring && !isExpired(matchedItem.expiryDate)) {
+          expiringMatchCount++
+          matchedExpiringIngredients.push({
+            name: ing.name,
+            daysLeft: daysUntilExpiry(matchedItem.expiryDate)
+          })
+          const daysLeft = daysUntilExpiry(matchedItem.expiryDate)
+          expiringUrgencyScore += Math.max(0, 4 - daysLeft)
+        }
+      }
+    })
+
+    const matchRatio = matchCount / recipe.ingredients.length
+    const expiringBonus = expiringMatchCount * 3 + expiringUrgencyScore
+    const priorityScore = matchCount + expiringBonus
+
     return {
       ...recipe,
       matchCount,
-      matchRatio: matchCount / recipe.ingredients.length
+      matchRatio,
+      expiringMatchCount,
+      matchedExpiringIngredients,
+      expiringUrgencyScore,
+      priorityScore
     }
   })
 
-  scoredRecipes.sort((a, b) => b.matchCount - a.matchCount || b.matchRatio - a.matchRatio)
+  scoredRecipes.sort((a, b) => {
+    if (b.priorityScore !== a.priorityScore) {
+      return b.priorityScore - a.priorityScore
+    }
+    if (b.matchCount !== a.matchCount) {
+      return b.matchCount - a.matchCount
+    }
+    return b.matchRatio - a.matchRatio
+  })
 
   const topRecipes = scoredRecipes.filter(r => r.matchCount > 0)
 
@@ -135,7 +189,9 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
     return topRecipes.slice(0, count)
   }
 
-  const shuffled = [...recipes].sort(() => Math.random() - 0.5)
+  const shuffled = scoredRecipes
+    .filter(r => r.matchCount === 0)
+    .sort(() => Math.random() - 0.5)
   return [...topRecipes, ...shuffled].slice(0, count)
 }
 
