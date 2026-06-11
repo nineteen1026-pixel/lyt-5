@@ -1,7 +1,10 @@
 const recipes = [
   {
     name: '番茄炒蛋',
-    ingredients: ['番茄', '鸡蛋'],
+    ingredients: [
+      { name: '番茄', quantity: 2, unit: '个' },
+      { name: '鸡蛋', quantity: 3, unit: '个' }
+    ],
     description: '经典家常菜，酸甜可口，简单易做。',
     steps: [
       '番茄切块，鸡蛋打散备用',
@@ -12,7 +15,10 @@ const recipes = [
   },
   {
     name: '青椒肉丝',
-    ingredients: ['青椒', '猪肉'],
+    ingredients: [
+      { name: '青椒', quantity: 2, unit: '个' },
+      { name: '猪肉', quantity: 200, unit: '克' }
+    ],
     description: '下饭神器，青椒爽脆，肉丝嫩滑。',
     steps: [
       '猪肉切丝，加生抽淀粉腌制10分钟',
@@ -23,7 +29,10 @@ const recipes = [
   },
   {
     name: '土豆烧牛肉',
-    ingredients: ['土豆', '牛肉'],
+    ingredients: [
+      { name: '土豆', quantity: 2, unit: '个' },
+      { name: '牛肉', quantity: 300, unit: '克' }
+    ],
     description: '浓郁鲜香，土豆软糯，牛肉入味。',
     steps: [
       '牛肉切块焯水，土豆切块',
@@ -34,7 +43,10 @@ const recipes = [
   },
   {
     name: '蒜蓉西兰花',
-    ingredients: ['西兰花', '大蒜'],
+    ingredients: [
+      { name: '西兰花', quantity: 1, unit: '个' },
+      { name: '大蒜', quantity: 3, unit: '瓣' }
+    ],
     description: '清爽健康，蒜香浓郁的素菜。',
     steps: [
       '西兰花切小朵，焯水备用',
@@ -45,7 +57,10 @@ const recipes = [
   },
   {
     name: '黄瓜拌木耳',
-    ingredients: ['黄瓜', '木耳'],
+    ingredients: [
+      { name: '黄瓜', quantity: 1, unit: '根' },
+      { name: '木耳', quantity: 50, unit: '克' }
+    ],
     description: '清凉爽口，夏季开胃小菜。',
     steps: [
       '木耳泡发焯水，黄瓜拍碎切段',
@@ -56,7 +71,10 @@ const recipes = [
   },
   {
     name: '白菜豆腐汤',
-    ingredients: ['白菜', '豆腐'],
+    ingredients: [
+      { name: '白菜', quantity: 200, unit: '克' },
+      { name: '豆腐', quantity: 1, unit: '盒' }
+    ],
     description: '清淡鲜美，暖胃营养的家常汤。',
     steps: [
       '白菜切段，豆腐切块',
@@ -67,7 +85,10 @@ const recipes = [
   },
   {
     name: '胡萝卜炒肉片',
-    ingredients: ['胡萝卜', '猪肉'],
+    ingredients: [
+      { name: '胡萝卜', quantity: 1, unit: '根' },
+      { name: '猪肉', quantity: 150, unit: '克' }
+    ],
     description: '营养丰富，胡萝卜甜润，肉片香嫩。',
     steps: [
       '胡萝卜切片，猪肉切片腌制',
@@ -78,7 +99,10 @@ const recipes = [
   },
   {
     name: '洋葱炒鸡蛋',
-    ingredients: ['洋葱', '鸡蛋'],
+    ingredients: [
+      { name: '洋葱', quantity: 1, unit: '个' },
+      { name: '鸡蛋', quantity: 2, unit: '个' }
+    ],
     description: '简单快手，洋葱甜香，鸡蛋鲜嫩。',
     steps: [
       '洋葱切丝，鸡蛋打散',
@@ -94,7 +118,7 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
 
   const scoredRecipes = recipes.map(recipe => {
     const matchCount = recipe.ingredients.filter(ing =>
-      ingredientNames.some(name => name.includes(ing.toLowerCase()) || ing.toLowerCase().includes(name))
+      ingredientNames.some(name => name.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(name))
     ).length
     return {
       ...recipe,
@@ -117,4 +141,23 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
 
 export function getAllRecipes() {
   return recipes
+}
+
+export function getIngredientNames(recipe) {
+  return recipe.ingredients.map(ing => ing.name)
+}
+
+export function getTotalIngredients(recipeList) {
+  const total = {}
+  recipeList.forEach(recipe => {
+    recipe.ingredients.forEach(ing => {
+      const key = `${ing.name}_${ing.unit}`
+      if (total[key]) {
+        total[key].quantity += ing.quantity
+      } else {
+        total[key] = { ...ing }
+      }
+    })
+  })
+  return Object.values(total)
 }

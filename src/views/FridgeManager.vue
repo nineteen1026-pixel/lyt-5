@@ -87,11 +87,11 @@
               <div class="recipe-ingredients">
                 <span
                   v-for="ing in recipe.ingredients"
-                  :key="ing"
+                  :key="ing.name"
                   class="ingredient-tag"
-                  :class="{ available: hasIngredient(ing) }"
+                  :class="{ available: hasIngredient(ing.name) }"
                 >
-                  {{ ing }}
+                  {{ ing.name }} {{ ing.quantity }}{{ ing.unit }}
                 </span>
               </div>
               <div class="recipe-steps">
@@ -167,6 +167,7 @@
                 />
                 <span class="shopping-item-name">{{ item.name }}</span>
                 <span v-if="item.fromExpiring" class="badge-from-expiring">临期</span>
+                <span v-if="item.fromMealPlan" class="badge-from-mealplan">周计划</span>
               </div>
               <div class="shopping-item-right">
                 <span class="shopping-item-qty">{{ item.quantity }} {{ item.unit }}</span>
@@ -1003,6 +1004,15 @@ function clearPurchasedItems() {
   padding: 1px 6px;
   background: #fff3e0;
   color: #e65100;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.badge-from-mealplan {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: #f3e5f5;
+  color: #7b1fa2;
   border-radius: 8px;
   font-weight: 500;
 }

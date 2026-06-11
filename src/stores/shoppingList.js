@@ -43,6 +43,7 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
       unit: itemData.unit || '个',
       purchased: false,
       fromExpiring: itemData.fromExpiring || false,
+      fromMealPlan: itemData.fromMealPlan || false,
       fridgeItemId: itemData.fridgeItemId || null,
       linkedFridgeItemId: null,
       originalQuantity: null,
