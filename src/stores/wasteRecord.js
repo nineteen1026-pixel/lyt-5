@@ -29,21 +29,6 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
     return [...monthSet].sort().reverse()
   })
 
-  const currentMonth = computed(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
-
-  const availableMonths = computed(() => {
-    const months = [...allMonths.value]
-    if (!months.includes(currentMonth.value)) {
-      months.unshift(currentMonth.value)
-    }
-    return months
-  })
-
-  const zones = ['冷藏', '冷冻', '保鲜', '门架']
-
   function addRecord(itemData) {
     const now = new Date()
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -60,17 +45,6 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
     }
     records.value.push(record)
     return record
-  }
-
-  function removeRecord(id) {
-    const index = records.value.findIndex(r => r.id === id)
-    if (index !== -1) {
-      records.value.splice(index, 1)
-    }
-  }
-
-  function clearAllRecords() {
-    records.value = []
   }
 
   function getMonthlySummary(month, zoneFilter = '全部') {
@@ -107,8 +81,6 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
 
-    const weeklyBreakdown = getWeeklyBreakdown(filtered)
-
     return {
       month,
       totalCount,
@@ -116,27 +88,8 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       discardedCount,
       byZone,
       topWastedItems,
-      weeklyBreakdown,
       details: [...filtered].sort((a, b) => new Date(b.discardedAt) - new Date(a.discardedAt))
     }
-  }
-
-  function getWeeklyBreakdown(filteredRecords) {
-    const weeks = {}
-    filteredRecords.forEach(r => {
-      const date = new Date(r.discardedAt)
-      const dayOfMonth = date.getDate()
-      const weekNum = Math.ceil(dayOfMonth / 7)
-      const weekKey = `第${weekNum}周`
-      if (!weeks[weekKey]) {
-        weeks[weekKey] = { expired: 0, discarded: 0, total: 0 }
-      }
-      weeks[weekKey][r.reason]++
-      weeks[weekKey].total++
-    })
-    return Object.entries(weeks)
-      .map(([week, data]) => ({ week, ...data }))
-      .sort((a, b) => a.week.localeCompare(b.week))
   }
 
   function getWasteTrend(zoneFilter = '全部') {
@@ -154,55 +107,6 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       .sort((a, b) => a.month.localeCompare(b.month))
   }
 
-  function generateMockData() {
-    const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth()
-
-    const mockItems = [
-      { name: '西红柿', unit: '斤', zone: '冷藏' },
-      { name: '黄瓜', unit: '斤', zone: '冷藏' },
-      { name: '鸡蛋', unit: '个', zone: '保鲜' },
-      { name: '牛奶', unit: '盒', zone: '冷藏' },
-      { name: '鸡肉', unit: '斤', zone: '冷冻' },
-      { name: '面包', unit: '袋', zone: '冷藏' },
-      { name: '酸奶', unit: '瓶', zone: '冷藏' },
-      { name: '豆腐', unit: '盒', zone: '保鲜' },
-      { name: '饺子', unit: '袋', zone: '冷冻' },
-      { name: '可乐', unit: '瓶', zone: '门架' },
-    ]
-
-    for (let m = 0; m < 6; m++) {
-      const monthIdx = (currentMonth - m + 12) % 12
-      const year = currentYear - (m > currentMonth ? 1 : 0)
-      const monthStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}`
-      const daysInMonth = new Date(year, monthIdx + 1, 0).getDate()
-      const recordCount = Math.floor(Math.random() * 8) + 3
-
-      for (let i = 0; i < recordCount; i++) {
-        const item = mockItems[Math.floor(Math.random() * mockItems.length)]
-        const day = Math.floor(Math.random() * daysInMonth) + 1
-        const reason = Math.random() > 0.4 ? 'expired' : 'discarded'
-        const date = new Date(year, monthIdx, day)
-        const expiryDate = new Date(date)
-        expiryDate.setDate(expiryDate.getDate() - Math.floor(Math.random() * 5))
-
-        const record = {
-          id: generateId(),
-          name: item.name,
-          quantity: Math.floor(Math.random() * 3) + 1,
-          unit: item.unit,
-          zone: item.zone,
-          reason,
-          expiryDate: expiryDate.toISOString().split('T')[0],
-          discardedAt: date.toISOString(),
-          month: monthStr
-        }
-        records.value.push(record)
-      }
-    }
-  }
-
   watch(
     records,
     (newRecords) => {
@@ -214,14 +118,8 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
   return {
     records,
     allMonths,
-    currentMonth,
-    availableMonths,
-    zones,
     addRecord,
-    removeRecord,
-    clearAllRecords,
     getMonthlySummary,
-    getWasteTrend,
-    generateMockData
+    getWasteTrend
   }
 })
