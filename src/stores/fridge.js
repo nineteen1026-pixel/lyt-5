@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
+import { useWasteRecordStore } from '@/stores/wasteRecord'
 
 export const useFridgeStore = defineStore('fridge', () => {
   const items = ref(getStoredItems())
@@ -63,6 +64,24 @@ export const useFridgeStore = defineStore('fridge', () => {
     return items.value.find(item => item.id === id)
   }
 
+  function discardItem(id, reason = 'discarded') {
+    const item = items.value.find(item => item.id === id)
+    if (!item) return
+    const wasteStore = useWasteRecordStore()
+    wasteStore.addRecord({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      zone: item.zone,
+      reason,
+      expiryDate: item.expiryDate
+    })
+    const index = items.value.findIndex(item => item.id === id)
+    if (index !== -1) {
+      items.value.splice(index, 1)
+    }
+  }
+
   watch(
     items,
     (newItems) => {
@@ -82,6 +101,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     updateItem,
     removeItem,
     getItemById,
+    discardItem,
     daysUntilExpiry,
     isExpiringSoon,
     isExpired

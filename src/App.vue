@@ -17,11 +17,19 @@
         >
           📅 周餐计划
         </button>
+        <button
+          class="nav-link"
+          :class="{ active: currentView === 'waste' }"
+          @click="currentView = 'waste'"
+        >
+          📊 浪费报表
+        </button>
       </div>
     </nav>
     <main class="main-view">
       <FridgeManager v-if="currentView === 'fridge'" />
       <MealPlan v-else-if="currentView === 'mealplan'" />
+      <WasteReport v-else-if="currentView === 'waste'" />
     </main>
   </div>
 </template>
@@ -30,6 +38,7 @@
 import { ref } from 'vue'
 import FridgeManager from '@/views/FridgeManager.vue'
 import MealPlan from '@/views/MealPlan.vue'
+import WasteReport from '@/views/WasteReport.vue'
 
 const currentView = ref('fridge')
 </script>

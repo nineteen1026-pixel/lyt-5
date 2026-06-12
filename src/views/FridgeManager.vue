@@ -283,7 +283,7 @@
                   消耗
                 </button>
                 <button class="btn btn-small btn-danger" @click="deleteItem(item.id)">
-                  删除
+                  {{ fridgeStore.isExpired(item.expiryDate) ? '丢弃' : '删除' }}
                 </button>
               </div>
             </div>
@@ -357,8 +357,12 @@ function handleAdd() {
 }
 
 function deleteItem(id) {
-  if (confirm('确定要删除这个食材吗？')) {
-    fridgeStore.removeItem(id)
+  const item = fridgeStore.getItemById(id)
+  if (!item) return
+  const reason = fridgeStore.isExpired(item.expiryDate) ? 'expired' : 'discarded'
+  const label = reason === 'expired' ? '过期丢弃' : '手动丢弃'
+  if (confirm(`确定要${label}这个食材吗？此操作将记录到浪费报表。`)) {
+    fridgeStore.discardItem(id, reason)
   }
 }
 
