@@ -126,7 +126,53 @@
         </div>
 
         <div class="shopping-list card">
-          <h2>🛒 购物清单</h2>
+          <div class="shopping-header">
+            <h2>🛒 购物清单</h2>
+            <div class="shopping-header-actions">
+              <button
+                v-if="fridgeStore.expiringSoonItems.length > 0"
+                class="btn btn-small btn-batch-expiring"
+                @click="handleBatchExpiring"
+              >
+                ⚡ 一键补货
+              </button>
+              <button class="btn btn-small btn-settings" @click="openSettings">
+                ⚙ 设置
+              </button>
+            </div>
+          </div>
+
+          <div class="shopping-budget-summary" :class="{ 'over-budget': shoppingStore.isOverBudget }">
+            <div class="budget-item">
+              <span class="budget-label">预算上限</span>
+              <span class="budget-value limit">¥{{ shoppingStore.budgetLimit.toFixed(2) }}</span>
+            </div>
+            <div class="budget-item">
+              <span class="budget-label">已用</span>
+              <span class="budget-value total" :class="{ danger: shoppingStore.isOverBudget }">
+                ¥{{ shoppingStore.totalBudget.toFixed(2) }}
+              </span>
+            </div>
+            <div class="budget-item">
+              <span class="budget-label">剩余</span>
+              <span class="budget-value" :class="shoppingStore.remainingBudget >= 0 ? 'remaining' : 'over'">
+                {{ shoppingStore.remainingBudget >= 0 ? '' : '-' }}¥{{ Math.abs(shoppingStore.remainingBudget).toFixed(2) }}
+              </span>
+            </div>
+          </div>
+
+          <div class="budget-progress-bar">
+            <div
+              class="budget-progress-fill"
+              :class="{ danger: shoppingStore.isOverBudget, warning: shoppingStore.budgetUsagePercent >= 80 && !shoppingStore.isOverBudget }"
+              :style="{ width: Math.min(100, shoppingStore.budgetUsagePercent) + '%' }"
+            ></div>
+            <span class="budget-progress-text">{{ shoppingStore.budgetUsagePercent }}%</span>
+          </div>
+
+          <div v-if="shoppingStore.isOverBudget" class="budget-warning">
+            ⚠️ 已超出预算 ¥{{ Math.abs(shoppingStore.remainingBudget).toFixed(2) }}
+          </div>
           <div class="shopping-add-form">
             <div class="shopping-form-row">
               <input
@@ -135,12 +181,15 @@
                 placeholder="添加采购项"
                 @keyup.enter="handleShoppingAdd"
               />
+            </div>
+            <div class="shopping-form-row">
               <input
                 v-model.number="shoppingForm.quantity"
                 type="number"
                 min="1"
                 step="0.1"
                 class="shopping-qty-input"
+                placeholder="数量"
               />
               <select v-model="shoppingForm.unit" class="shopping-unit-select">
                 <option value="个">个</option>
@@ -149,6 +198,18 @@
                 <option value="袋">袋</option>
                 <option value="盒">盒</option>
                 <option value="瓶">瓶</option>
+              </select>
+              <input
+                v-model.number="shoppingForm.unitPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                class="shopping-price-input"
+                placeholder="单价(元)"
+              />
+              <select v-model="shoppingForm.store" class="shopping-store-select">
+                <option value="">门店</option>
+                <option v-for="s in shoppingStore.stores" :key="s" :value="s">{{ s }}</option>
               </select>
               <button class="btn btn-shopping-add" @click="handleShoppingAdd">➕</button>
             </div>
@@ -169,30 +230,86 @@
               已购 ({{ shoppingStore.purchasedItems.length }})
             </button>
           </div>
-          <div v-if="displayShoppingItems.length === 0" class="empty-tip">
+          <div v-if="displayShoppingStoreKeys.length === 0" class="empty-tip">
             {{ shoppingTab === 'pending' ? '购物清单为空' : '暂无已购项' }}
           </div>
-          <div v-else class="shopping-items">
+          <div v-else class="shopping-groups">
             <div
-              v-for="item in displayShoppingItems"
-              :key="item.id"
-              class="shopping-item"
-              :class="{ purchased: item.purchased, 'from-expiring': item.fromExpiring }"
+              v-for="store in displayShoppingStoreKeys"
+              :key="store"
+              class="shopping-store-group"
             >
-              <div class="shopping-item-left">
-                <input
-                  type="checkbox"
-                  :checked="item.purchased"
-                  class="shopping-checkbox"
-                  @change="item.purchased ? undoPurchased(item) : handlePurchased(item)"
-                />
-                <span class="shopping-item-name">{{ item.name }}</span>
-                <span v-if="item.fromExpiring" class="badge-from-expiring">临期</span>
-                <span v-if="item.fromMealPlan" class="badge-from-mealplan">周计划</span>
+              <div class="shopping-store-header">
+                <span class="shopping-store-name">🏪 {{ store }}</span>
+                <span class="shopping-store-budget">
+                  小计: ¥{{ getStoreBudget(store).toFixed(2) }}
+                  ({{ getStoreItems(store).length }}项)
+                </span>
               </div>
-              <div class="shopping-item-right">
-                <span class="shopping-item-qty">{{ item.quantity }} {{ item.unit }}</span>
-                <button class="btn btn-small btn-danger" @click="shoppingStore.removeItem(item.id)">✕</button>
+              <div class="shopping-items">
+                <div
+                  v-for="item in getStoreItems(store)"
+                  :key="item.id"
+                  class="shopping-item"
+                  :class="{ purchased: item.purchased, 'from-expiring': item.fromExpiring }"
+                >
+                  <div class="shopping-item-left">
+                    <input
+                      type="checkbox"
+                      :checked="item.purchased"
+                      class="shopping-checkbox"
+                      @change="item.purchased ? undoPurchased(item) : handlePurchased(item)"
+                    />
+                    <div class="shopping-item-main">
+                      <div class="shopping-item-name-row">
+                        <span class="shopping-item-name">{{ item.name }}</span>
+                        <span v-if="item.fromExpiring" class="badge-from-expiring">临期</span>
+                        <span v-if="item.fromMealPlan" class="badge-from-mealplan">周计划</span>
+                      </div>
+                      <div class="shopping-item-edit-row" v-if="!item.purchased">
+                        <input
+                          v-model.number="item.quantity"
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          class="shopping-inline-input qty"
+                          @change="handleItemUpdate(item)"
+                        />
+                        <span class="shopping-inline-unit">{{ item.unit }}</span>
+                        <span class="shopping-inline-sep">×</span>
+                        <span class="shopping-inline-label">¥</span>
+                        <input
+                          v-model.number="item.unitPrice"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="shopping-inline-input price"
+                          @change="handleItemUpdate(item)"
+                        />
+                        <select
+                          v-model="item.store"
+                          class="shopping-inline-select"
+                          @change="handleItemUpdate(item)"
+                        >
+                          <option value="">未指定</option>
+                          <option v-for="s in shoppingStore.stores" :key="s" :value="s">{{ s }}</option>
+                        </select>
+                      </div>
+                      <div class="shopping-item-readonly-row" v-else>
+                        <span class="shopping-item-qty">{{ item.quantity }} {{ item.unit }}</span>
+                        <span v-if="item.unitPrice > 0" class="shopping-item-price">
+                          ¥{{ item.unitPrice }}/{{ item.unit }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="shopping-item-right">
+                    <div class="shopping-item-subtotal">
+                      ¥{{ shoppingStore.getItemSubtotal(item).toFixed(2) }}
+                    </div>
+                    <button class="btn btn-small btn-danger" @click="shoppingStore.removeItem(item.id)">✕</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -247,7 +364,7 @@
               :key="item.id"
               class="item-card"
               :class="{
-                'expiring-soon': fridgeStore.isExpiringSoon(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate),
+                'expiring-soon': fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate),
                 'expired': fridgeStore.isExpired(item.expiryDate)
               }"
             >
@@ -273,7 +390,7 @@
               </div>
               <div class="item-actions">
                 <button
-                  v-if="fridgeStore.isExpiringSoon(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate)"
+                  v-if="fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate)"
                   class="btn btn-small btn-shopping"
                   @click="addToShoppingList(item)"
                 >
@@ -291,11 +408,186 @@
         </div>
       </section>
     </div>
+
+    <div v-if="showExpiringDialog" class="expiring-dialog-overlay" @click.self="cancelExpiringAdd">
+      <div class="expiring-dialog">
+        <div class="expiring-dialog-header">
+          <h3>🛒 临期补货</h3>
+          <button class="expiring-dialog-close" @click="cancelExpiringAdd">✕</button>
+        </div>
+        <div class="expiring-dialog-body" v-if="expiringDialogItem">
+          <div class="expiring-dialog-info">
+            <span class="expiring-dialog-name">{{ expiringDialogItem.name }}</span>
+            <span class="expiring-dialog-badge">
+              还剩 {{ fridgeStore.daysUntilExpiry(expiringDialogItem.expiryDate) }} 天
+            </span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>补货数量</label>
+              <input
+                v-model.number="expiringDialogForm.quantity"
+                type="number"
+                min="0.1"
+                step="0.1"
+              />
+            </div>
+            <div class="form-group">
+              <label>单位</label>
+              <select v-model="expiringDialogForm.unit">
+                <option value="个">个</option>
+                <option value="斤">斤</option>
+                <option value="克">克</option>
+                <option value="袋">袋</option>
+                <option value="盒">盒</option>
+                <option value="瓶">瓶</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>单价 (元)</label>
+              <input
+                v-model.number="expiringDialogForm.unitPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="预估单价"
+              />
+            </div>
+            <div class="form-group">
+              <label>门店</label>
+              <select v-model="expiringDialogForm.store">
+                <option value="">未指定</option>
+                <option v-for="s in shoppingStore.stores" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="expiring-dialog-summary">
+            预计花费: ¥{{ (expiringDialogForm.quantity * (expiringDialogForm.unitPrice || 0)).toFixed(2) }}
+          </div>
+        </div>
+        <div class="expiring-dialog-footer">
+          <button class="btn btn-small" @click="cancelExpiringAdd">取消</button>
+          <button class="btn btn-primary" @click="confirmExpiringAdd">加入购物清单</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showSettings" class="settings-dialog-overlay" @click.self="closeSettings">
+      <div class="settings-dialog">
+        <div class="settings-dialog-header">
+          <h3>⚙ 购物清单设置</h3>
+          <button class="settings-dialog-close" @click="closeSettings">✕</button>
+        </div>
+        <div class="settings-dialog-body">
+          <div class="settings-section">
+            <h4>💰 预算设置</h4>
+            <div class="form-group">
+              <label>预算上限 (元)</label>
+              <input
+                v-model.number="settingsForm.budgetLimit"
+                type="number"
+                min="0"
+                step="10"
+                @change="handleBudgetChange"
+              />
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4>⏰ 临期补货规则</h4>
+            <div class="form-group">
+              <label>临期提醒天数</label>
+              <select v-model.number="settingsForm.expiringDays" @change="handleExpiringDaysChange">
+                <option :value="1">1 天</option>
+                <option :value="2">2 天</option>
+                <option :value="3">3 天</option>
+                <option :value="5">5 天</option>
+                <option :value="7">7 天</option>
+                <option :value="10">10 天</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>默认门店</label>
+              <select v-model="settingsForm.defaultStore" @change="handleDefaultStoreChange">
+                <option value="">未指定</option>
+                <option v-for="s in shoppingStore.stores" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>补货数量倍率</label>
+              <select v-model.number="settingsForm.quantityMultiplier" @change="handleQuantityMultiplierChange">
+                <option :value="1">1 倍（原量）</option>
+                <option :value="1.5">1.5 倍</option>
+                <option :value="2">2 倍</option>
+                <option :value="2.5">2.5 倍</option>
+                <option :value="3">3 倍</option>
+              </select>
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  v-model="settingsForm.autoAddToShopping"
+                  @change="handleAutoAddChange"
+                />
+                <span>临期自动加入购物清单</span>
+              </label>
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  v-model="settingsForm.useLastPrice"
+                  @change="handleUseLastPriceChange"
+                />
+                <span>自动填充历史单价</span>
+              </label>
+            </div>
+            <p class="settings-desc">
+              食材保质期不足设定天数时，将标记为临期并可一键补货。开启自动补货后，临期食材会自动加入购物清单。
+            </p>
+          </div>
+
+          <div class="settings-section">
+            <h4>🏪 门店管理</h4>
+            <div class="store-manage-row">
+              <input
+                v-model="newStoreName"
+                type="text"
+                placeholder="输入新门店名称"
+                @keyup.enter="addNewStore"
+              />
+              <button class="btn btn-small btn-primary" @click="addNewStore">添加</button>
+            </div>
+            <div class="store-list">
+              <div
+                v-for="store in shoppingStore.stores"
+                :key="store"
+                class="store-item"
+              >
+                <span class="store-name">{{ store }}</span>
+                <button
+                  class="btn btn-small btn-danger btn-remove-store"
+                  @click="removeStore(store)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-dialog-footer">
+          <button class="btn btn-primary" @click="closeSettings">完成</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useFridgeStore } from '@/stores/fridge'
 import { useShoppingListStore } from '@/stores/shoppingList'
 import { getRecipeSuggestions } from '@/utils/recipes'
@@ -305,7 +597,61 @@ const shoppingStore = useShoppingListStore()
 
 const activeZone = ref('全部')
 const shoppingTab = ref('pending')
-const shoppingForm = ref({ name: '', quantity: 1, unit: '个' })
+const shoppingForm = ref({ name: '', quantity: 1, unit: '个', store: '', unitPrice: 0 })
+const showExpiringDialog = ref(false)
+const expiringDialogItem = ref(null)
+const expiringDialogForm = ref({ quantity: 1, unit: '个', store: '', unitPrice: 0 })
+const showSettings = ref(false)
+const settingsForm = ref({ 
+  budgetLimit: 0, 
+  expiringDays: 3,
+  defaultStore: '',
+  quantityMultiplier: 1.5,
+  autoAddToShopping: false,
+  useLastPrice: true
+})
+const newStoreName = ref('')
+
+watch(() => shoppingForm.value.name, (newName) => {
+  if (newName && newName.trim()) {
+    const lastPrice = shoppingStore.getLastPrice(newName)
+    const lastStore = shoppingStore.getLastStore(newName)
+    if (lastPrice > 0 && shoppingForm.value.unitPrice === 0) {
+      shoppingForm.value.unitPrice = lastPrice
+    }
+    if (lastStore && !shoppingForm.value.store) {
+      shoppingForm.value.store = lastStore
+    }
+  }
+})
+
+const autoReplenishProcessed = ref(new Set())
+
+watch(() => fridgeStore.expiringSoonItems, (newExpiringItems) => {
+  if (!shoppingStore.replenishRules.autoAddToShopping) return
+  
+  const newItems = newExpiringItems.filter(item => !autoReplenishProcessed.value.has(item.id))
+  if (newItems.length > 0) {
+    const added = shoppingStore.processAutoReplenish(newItems)
+    added.forEach(item => {
+      if (item.fridgeItemId) {
+        autoReplenishProcessed.value.add(item.fridgeItemId)
+      }
+    })
+  }
+}, { deep: true, immediate: true })
+
+watch(() => shoppingStore.replenishRules.autoAddToShopping, (enabled) => {
+  if (enabled) {
+    autoReplenishProcessed.value.clear()
+    const added = shoppingStore.processAutoReplenish(fridgeStore.expiringSoonItems)
+    added.forEach(item => {
+      if (item.fridgeItemId) {
+        autoReplenishProcessed.value.add(item.fridgeItemId)
+      }
+    })
+  }
+})
 
 const form = ref({
   name: '',
@@ -326,11 +672,37 @@ const filteredItems = computed(() => {
   return fridgeStore.sortedItems.filter(item => item.zone === activeZone.value)
 })
 
-const displayShoppingItems = computed(() => {
+const displayShoppingItemsByStore = computed(() => {
   return shoppingTab.value === 'pending'
-    ? shoppingStore.pendingItems
-    : shoppingStore.purchasedItems
+    ? shoppingStore.pendingItemsByStore
+    : shoppingStore.purchasedItemsByStore
 })
+
+const displayShoppingStoreKeys = computed(() => {
+  return Object.keys(displayShoppingItemsByStore.value)
+})
+
+const displayBudgetByStore = computed(() => {
+  return shoppingTab.value === 'pending'
+    ? shoppingStore.pendingBudgetByStore
+    : shoppingStore.purchasedBudgetByStore
+})
+
+function getStoreItems(store) {
+  return displayShoppingItemsByStore.value[store] || []
+}
+
+function getStoreBudget(store) {
+  return displayBudgetByStore.value[store] || 0
+}
+
+function handleItemUpdate(item) {
+  shoppingStore.updateItem(item.id, {
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    store: item.store
+  })
+}
 
 function getDefaultDate() {
   const date = new Date()
@@ -398,7 +770,44 @@ function isExpiringIngredient(ingredientName, recipe) {
 }
 
 function addToShoppingList(item) {
-  shoppingStore.addFromExpiring(item)
+  expiringDialogItem.value = item
+  
+  const rules = shoppingStore.replenishRules
+  let unitPrice = 0
+  let store = rules.defaultStore || ''
+  
+  if (rules.useLastPrice) {
+    unitPrice = shoppingStore.getLastPrice(item.name)
+  }
+  if (!store) {
+    store = shoppingStore.getLastStore(item.name)
+  }
+  
+  const quantity = item.quantity * (rules.quantityMultiplier || 1)
+  
+  expiringDialogForm.value = {
+    quantity: Math.max(item.quantity, quantity),
+    unit: item.unit,
+    store,
+    unitPrice
+  }
+  showExpiringDialog.value = true
+}
+
+function confirmExpiringAdd() {
+  if (!expiringDialogItem.value) return
+  shoppingStore.addFromExpiring(expiringDialogItem.value, {
+    store: expiringDialogForm.value.store,
+    unitPrice: expiringDialogForm.value.unitPrice,
+    quantity: expiringDialogForm.value.quantity
+  })
+  showExpiringDialog.value = false
+  expiringDialogItem.value = null
+}
+
+function cancelExpiringAdd() {
+  showExpiringDialog.value = false
+  expiringDialogItem.value = null
 }
 
 function handleShoppingAdd() {
@@ -406,10 +815,14 @@ function handleShoppingAdd() {
   shoppingStore.addItem({
     name: shoppingForm.value.name.trim(),
     quantity: shoppingForm.value.quantity,
-    unit: shoppingForm.value.unit
+    unit: shoppingForm.value.unit,
+    store: shoppingForm.value.store,
+    unitPrice: shoppingForm.value.unitPrice
   })
   shoppingForm.value.name = ''
   shoppingForm.value.quantity = 1
+  shoppingForm.value.unitPrice = 0
+  shoppingForm.value.store = ''
 }
 
 function handlePurchased(item) {
@@ -471,6 +884,101 @@ function undoPurchased(item) {
 function clearPurchasedItems() {
   if (confirm('确定清除所有已购项吗？')) {
     shoppingStore.clearPurchased()
+  }
+}
+
+function openSettings() {
+  settingsForm.value.budgetLimit = shoppingStore.budgetLimit
+  settingsForm.value.expiringDays = fridgeStore.expiringDays
+  settingsForm.value.defaultStore = shoppingStore.replenishRules.defaultStore
+  settingsForm.value.quantityMultiplier = shoppingStore.replenishRules.quantityMultiplier
+  settingsForm.value.autoAddToShopping = shoppingStore.replenishRules.autoAddToShopping
+  settingsForm.value.useLastPrice = shoppingStore.replenishRules.useLastPrice
+  showSettings.value = true
+}
+
+watch(() => fridgeStore.expiringDays, (newDays) => {
+  if (shoppingStore.expiringDays !== newDays) {
+    shoppingStore.setExpiringDays(newDays)
+  }
+})
+
+watch(() => shoppingStore.expiringDays, (newDays) => {
+  if (fridgeStore.expiringDays !== newDays) {
+    fridgeStore.setExpiringDays(newDays)
+  }
+})
+
+function closeSettings() {
+  showSettings.value = false
+  newStoreName.value = ''
+}
+
+function handleBudgetChange() {
+  shoppingStore.setBudgetLimit(settingsForm.value.budgetLimit)
+}
+
+function handleExpiringDaysChange() {
+  shoppingStore.setExpiringDays(settingsForm.value.expiringDays)
+  fridgeStore.setExpiringDays(settingsForm.value.expiringDays)
+}
+
+function handleDefaultStoreChange() {
+  shoppingStore.updateReplenishRules({
+    defaultStore: settingsForm.value.defaultStore
+  })
+}
+
+function handleQuantityMultiplierChange() {
+  const value = parseFloat(settingsForm.value.quantityMultiplier)
+  if (!isNaN(value) && value >= 1) {
+    shoppingStore.updateReplenishRules({
+      quantityMultiplier: value
+    })
+  }
+}
+
+function handleAutoAddChange() {
+  shoppingStore.updateReplenishRules({
+    autoAddToShopping: settingsForm.value.autoAddToShopping
+  })
+}
+
+function handleUseLastPriceChange() {
+  shoppingStore.updateReplenishRules({
+    useLastPrice: settingsForm.value.useLastPrice
+  })
+}
+
+function addNewStore() {
+  const name = newStoreName.value.trim()
+  if (name) {
+    shoppingStore.addStore(name)
+    newStoreName.value = ''
+  }
+}
+
+function removeStore(storeName) {
+  if (confirm(`确定要删除门店"${storeName}"吗？相关购物项的门店将变为"未指定"。`)) {
+    shoppingStore.removeStore(storeName)
+  }
+}
+
+function handleBatchExpiring() {
+  const expiringItems = fridgeStore.expiringSoonItems
+  if (expiringItems.length === 0) return
+
+  const addedItems = shoppingStore.batchAddFromExpiring(expiringItems)
+  const count = addedItems.length
+  addedItems.forEach(item => {
+    if (item.fridgeItemId) {
+      autoReplenishProcessed.value.add(item.fridgeItemId)
+    }
+  })
+  if (count > 0) {
+    alert(`已将 ${count} 种临期食材加入购物清单！`)
+  } else {
+    alert('临期食材已全部在购物清单中。')
   }
 }
 </script>
@@ -1137,6 +1645,404 @@ function clearPurchasedItems() {
   text-align: right;
 }
 
+.shopping-budget-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+  border-radius: 10px;
+  border: 1px solid #c5e1a5;
+}
+
+.budget-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.budget-label {
+  font-size: 12px;
+  color: #689f38;
+}
+
+.budget-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.budget-value.total {
+  color: #2e7d32;
+}
+
+.budget-value.pending {
+  color: #ef6c00;
+}
+
+.budget-value.purchased {
+  color: #1976d2;
+}
+
+.shopping-price-input {
+  width: 80px;
+  padding: 8px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.shopping-price-input:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-store-select {
+  width: 80px;
+  padding: 8px 4px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.shopping-store-select:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.shopping-store-group {
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+
+.shopping-store-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border-bottom: 1px solid #90caf9;
+}
+
+.shopping-store-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1565c0;
+}
+
+.shopping-store-budget {
+  font-size: 12px;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.shopping-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.shopping-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #eceff1;
+  transition: all 0.2s;
+}
+
+.shopping-item:hover {
+  background: #eef5f4;
+}
+
+.shopping-item.purchased {
+  background: #e8f5e9;
+  border-color: #c8e6c9;
+}
+
+.shopping-item.purchased .shopping-item-name {
+  text-decoration: line-through;
+  color: #81c784;
+}
+
+.shopping-item.from-expiring {
+  border-left: 3px solid #ff9800;
+}
+
+.shopping-item-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shopping-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #00897b;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.shopping-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shopping-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.shopping-item-name {
+  font-size: 14px;
+  color: #263238;
+  font-weight: 500;
+}
+
+.shopping-item-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.shopping-inline-input {
+  padding: 4px 6px;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  width: 50px;
+}
+
+.shopping-inline-input.qty {
+  width: 50px;
+}
+
+.shopping-inline-input.price {
+  width: 60px;
+}
+
+.shopping-inline-input:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-inline-unit {
+  font-size: 12px;
+  color: #78909c;
+}
+
+.shopping-inline-sep {
+  font-size: 12px;
+  color: #90a4ae;
+}
+
+.shopping-inline-label {
+  font-size: 12px;
+  color: #78909c;
+}
+
+.shopping-inline-select {
+  padding: 4px 4px;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 80px;
+}
+
+.shopping-inline-select:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.shopping-item-readonly-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shopping-item-qty {
+  font-size: 13px;
+  color: #78909c;
+}
+
+.shopping-item-price {
+  font-size: 12px;
+  color: #00897b;
+  background: #e0f2f1;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.shopping-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.shopping-item-subtotal {
+  font-size: 14px;
+  font-weight: 600;
+  color: #00796b;
+  white-space: nowrap;
+}
+
+.expiring-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.expiring-dialog {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.expiring-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-bottom: 1px solid #ffcc80;
+}
+
+.expiring-dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #e65100;
+}
+
+.expiring-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #e65100;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.expiring-dialog-close:hover {
+  background: rgba(230, 81, 0, 0.1);
+}
+
+.expiring-dialog-body {
+  padding: 20px;
+}
+
+.expiring-dialog-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #fff8e1;
+  border-radius: 8px;
+  border-left: 3px solid #ff9800;
+}
+
+.expiring-dialog-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.expiring-dialog-badge {
+  font-size: 12px;
+  padding: 2px 10px;
+  background: linear-gradient(135deg, #ff7043, #f44336);
+  color: white;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.expiring-dialog-summary {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.expiring-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+}
+
+.expiring-dialog-footer .btn-primary {
+  width: auto;
+  padding: 8px 20px;
+}
+
+.checkbox-group {
+  margin-bottom: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #546e7a;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #00897b;
+  cursor: pointer;
+}
+
+.settings-desc {
+  font-size: 12px;
+  color: #90a4ae;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   .main-content {
     grid-template-columns: 1fr;
@@ -1144,6 +2050,15 @@ function clearPurchasedItems() {
 
   .stats-bar {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .shopping-form-row {
+    flex-wrap: wrap;
+  }
+
+  .shopping-price-input,
+  .shopping-store-select {
+    width: calc(50% - 4px);
   }
 }
 </style>

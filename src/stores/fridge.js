@@ -3,8 +3,28 @@ import { ref, computed, watch } from 'vue'
 import { getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
 
+const EXPIRING_DAYS_KEY = 'expiring_rule'
+
+function getStoredExpiringDays() {
+  try {
+    const data = localStorage.getItem(EXPIRING_DAYS_KEY)
+    return data ? parseInt(data, 10) : 3
+  } catch {
+    return 3
+  }
+}
+
+function setStoredExpiringDays(days) {
+  try {
+    localStorage.setItem(EXPIRING_DAYS_KEY, days.toString())
+  } catch {
+    console.error('Failed to save expiring days to localStorage')
+  }
+}
+
 export const useFridgeStore = defineStore('fridge', () => {
   const items = ref(getStoredItems())
+  const expiringDays = ref(getStoredExpiringDays())
 
   const zones = ['冷藏', '冷冻', '保鲜', '门架']
 
@@ -17,8 +37,21 @@ export const useFridgeStore = defineStore('fridge', () => {
   })
 
   const expiringSoonItems = computed(() => {
-    return items.value.filter(item => isExpiringSoon(item.expiryDate) && !isExpired(item.expiryDate))
+    return items.value.filter(item => 
+      isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+    )
   })
+
+  function setExpiringDays(days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      expiringDays.value = value
+    }
+  }
+
+  function isExpiringSoonItem(expiryDate) {
+    return isExpiringSoon(expiryDate, expiringDays.value)
+  }
 
   const expiredItems = computed(() => {
     return items.value.filter(item => isExpired(item.expiryDate))
@@ -90,9 +123,17 @@ export const useFridgeStore = defineStore('fridge', () => {
     { deep: true }
   )
 
+  watch(
+    expiringDays,
+    (newDays) => {
+      setStoredExpiringDays(newDays)
+    }
+  )
+
   return {
     items,
     zones,
+    expiringDays,
     sortedItems,
     expiringSoonItems,
     expiredItems,
@@ -102,6 +143,8 @@ export const useFridgeStore = defineStore('fridge', () => {
     removeItem,
     getItemById,
     discardItem,
+    setExpiringDays,
+    isExpiringSoonItem,
     daysUntilExpiry,
     isExpiringSoon,
     isExpired
