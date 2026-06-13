@@ -7,6 +7,7 @@ import {
   requestNotificationPermission, sendNotification
 } from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
+import { usePurchaseCostStore } from '@/stores/purchaseCost'
 import { getCategoryInfo, sanitizeNutritionTags } from '@/utils/categories'
 
 const EXPIRING_DAYS_KEY = 'expiring_rule'
@@ -254,6 +255,17 @@ export const useFridgeStore = defineStore('fridge', () => {
       parentCategoryId: item.parentCategoryId,
       parentCategoryName: item.parentCategoryName,
       nutritionTags: item.nutritionTags
+    })
+    const purchaseCostStore = usePurchaseCostStore()
+    purchaseCostStore.addConsumptionRecord({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      type: 'wasted',
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      parentCategoryId: item.parentCategoryId,
+      parentCategoryName: item.parentCategoryName
     })
     const index = items.value.findIndex(item => item.id === id)
     if (index !== -1) {

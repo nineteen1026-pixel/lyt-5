@@ -90,6 +90,24 @@
                 </select>
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>采购单价 (元)</label>
+                <input
+                  v-model.number="form.unitPrice"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="选填"
+                />
+              </div>
+              <div class="form-group cost-preview-group">
+                <label>小计</label>
+                <div class="cost-preview-value">
+                  ¥{{ (form.quantity * (form.unitPrice || 0)).toFixed(2) }}
+                </div>
+              </div>
+            </div>
             <div class="form-group">
               <div class="category-header">
                 <label>食材品类</label>
@@ -199,6 +217,123 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="cost-analysis card">
+          <div class="cost-analysis-header">
+            <h2>💰 采购成本分析</h2>
+            <select v-model="costMonth" class="cost-month-select">
+              <option v-for="month in costMonthOptions" :key="month" :value="month">
+                {{ formatCostMonth(month) }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="!costMonth" class="empty-tip">
+            暂无采购记录
+          </div>
+          <template v-else>
+            <div class="cost-summary-row">
+              <div class="cost-summary-item total">
+                <span class="cost-summary-num">¥{{ currentCostSummary.totalCost.toFixed(2) }}</span>
+                <span class="cost-summary-label">本月采购总计</span>
+              </div>
+              <div class="cost-summary-item count">
+                <span class="cost-summary-num">{{ currentCostSummary.totalCount }}</span>
+                <span class="cost-summary-label">采购笔数</span>
+              </div>
+            </div>
+
+            <div v-if="currentCostSummary.categorySummary.length > 0" class="cost-category-bars">
+              <h3 class="cost-subtitle">📊 品类支出分布</h3>
+              <div
+                v-for="cat in currentCostSummary.categorySummary"
+                :key="cat.name"
+                class="cost-category-row"
+              >
+                <span class="cost-cat-name">{{ cat.name }}</span>
+                <div class="cost-cat-bar-track">
+                  <div
+                    class="cost-cat-bar-fill"
+                    :style="{ width: cat.percent + '%' }"
+                  ></div>
+                </div>
+                <span class="cost-cat-amount">¥{{ cat.totalCost.toFixed(0) }}</span>
+                <span class="cost-cat-percent">{{ cat.percent }}%</span>
+              </div>
+            </div>
+
+            <div v-if="correlationData.length > 0" class="cost-correlation">
+              <h3 class="cost-subtitle">🔗 成本-消耗-浪费关联分析</h3>
+              <div class="correlation-table">
+                <div class="correlation-header-row">
+                  <span class="corr-col">品类</span>
+                  <span class="corr-col">采购额</span>
+                  <span class="corr-col">消耗</span>
+                  <span class="corr-col">浪费</span>
+                  <span class="corr-col">浪费率</span>
+                  <span class="corr-col">利用率</span>
+                </div>
+                <div
+                  v-for="item in correlationData"
+                  :key="item.category"
+                  class="correlation-data-row"
+                >
+                  <span class="corr-col corr-name">{{ item.category }}</span>
+                  <span class="corr-col">¥{{ item.totalCost.toFixed(0) }}</span>
+                  <span class="corr-col">{{ item.consumedQty }}</span>
+                  <span class="corr-col" :class="{ 'corr-waste-high': item.wastedQty > 0 }">
+                    {{ item.wastedQty > 0 ? item.wastedQty : '-' }}
+                  </span>
+                  <span class="corr-col">
+                    <span
+                      class="waste-rate-badge"
+                      :class="item.efficiencyLevel"
+                    >
+                      {{ item.wasteRate }}%
+                    </span>
+                  </span>
+                  <span class="corr-col">
+                    <span class="efficiency-badge" :class="item.efficiencyLevel">
+                      {{ item.costEfficiency }}%
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <div v-if="highWasteCategories.length > 0" class="correlation-insight">
+                <div class="insight-icon">💡</div>
+                <div class="insight-text">
+                  <strong>浪费预警：</strong>
+                  <span v-for="(cat, i) in highWasteCategories" :key="cat.category">
+                    {{ cat.category }}(浪费率{{ cat.wasteRate }}%){{ i < highWasteCategories.length - 1 ? '、' : '' }}
+                  </span>
+                  建议减少采购量或优化存储方式
+                </div>
+              </div>
+            </div>
+
+            <div v-if="currentCostSummary.details.length > 0" class="cost-detail-list">
+              <h3 class="cost-subtitle" @click="showCostDetail = !showCostDetail" style="cursor:pointer">
+                📋 采购明细 {{ showCostDetail ? '▼' : '▶' }}
+              </h3>
+              <div v-if="showCostDetail" class="cost-detail-items">
+                <div
+                  v-for="record in currentCostSummary.details"
+                  :key="record.id"
+                  class="cost-detail-item"
+                >
+                  <div class="cost-detail-left">
+                    <span class="cost-detail-name">{{ record.name }}</span>
+                    <span class="cost-detail-cat">{{ record.parentCategoryName }}</span>
+                  </div>
+                  <div class="cost-detail-right">
+                    <span class="cost-detail-qty">{{ record.quantity }}{{ record.unit }}×¥{{ record.unitPrice }}</span>
+                    <span class="cost-detail-total">¥{{ record.totalCost.toFixed(2) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div class="shopping-list card">
@@ -948,6 +1083,8 @@ import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick } from '
 import { useFridgeStore } from '@/stores/fridge'
 import { useShoppingListStore } from '@/stores/shoppingList'
 import { useMealPlanStore } from '@/stores/mealPlan'
+import { usePurchaseCostStore } from '@/stores/purchaseCost'
+import { useWasteRecordStore } from '@/stores/wasteRecord'
 import { getRecipeSuggestions } from '@/utils/recipes'
 import { sendNotification } from '@/utils/storage'
 import { 
@@ -971,6 +1108,8 @@ import {
 const fridgeStore = useFridgeStore()
 const shoppingStore = useShoppingListStore()
 const mealPlanStore = useMealPlanStore()
+const purchaseCostStore = usePurchaseCostStore()
+const wasteRecordStore = useWasteRecordStore()
 const switchView = inject('switchView')
 const scrollTarget = inject('scrollTarget')
 
@@ -1071,6 +1210,34 @@ const batchForm = ref({
 const showImportPreview = ref(false)
 const importPreviewData = ref(null)
 const importMode = ref('merge')
+
+const costMonth = ref(purchaseCostStore.allCostMonths.length > 0 ? purchaseCostStore.allCostMonths[0] : '')
+const showCostDetail = ref(false)
+
+const costMonthOptions = computed(() => {
+  return purchaseCostStore.allCostMonths
+})
+
+const currentCostSummary = computed(() => {
+  if (!costMonth.value) {
+    return { month: '', totalCost: 0, totalCount: 0, categorySummary: [], details: [] }
+  }
+  return purchaseCostStore.getMonthlyCostSummary(costMonth.value)
+})
+
+const correlationData = computed(() => {
+  if (!costMonth.value) return []
+  return purchaseCostStore.getCorrelationAnalysis(costMonth.value)
+})
+
+const highWasteCategories = computed(() => {
+  return correlationData.value.filter(item => item.wasteRate > 15)
+})
+
+function formatCostMonth(month) {
+  const [y, m] = month.split('-')
+  return `${y}年${parseInt(m)}月`
+}
 
 function toggleItemSelection(id) {
   const next = new Set(selectedItemIds.value)
@@ -1246,7 +1413,8 @@ const form = ref({
   categoryName: '',
   parentCategoryId: '',
   parentCategoryName: '',
-  nutritionTags: []
+  nutritionTags: [],
+  unitPrice: 0
 })
 
 const autoDetectCategory = ref(true)
@@ -1319,7 +1487,7 @@ function formatDate(dateStr) {
 function handleAdd() {
   if (!form.value.name.trim()) return
   const cleanedTags = sanitizeNutritionTags(form.value.nutritionTags)
-  fridgeStore.addItem({
+  const newItem = fridgeStore.addItem({
     name: form.value.name.trim(),
     quantity: form.value.quantity,
     unit: form.value.unit,
@@ -1331,6 +1499,18 @@ function handleAdd() {
     parentCategoryName: form.value.parentCategoryName,
     nutritionTags: cleanedTags
   })
+  if (form.value.unitPrice > 0) {
+    purchaseCostStore.addCostRecord({
+      name: form.value.name.trim(),
+      quantity: form.value.quantity,
+      unit: form.value.unit,
+      unitPrice: form.value.unitPrice,
+      categoryId: newItem.categoryId,
+      categoryName: newItem.categoryName,
+      parentCategoryId: newItem.parentCategoryId,
+      parentCategoryName: newItem.parentCategoryName
+    })
+  }
   form.value.name = ''
   form.value.quantity = 1
   form.value.categoryId = ''
@@ -1338,6 +1518,7 @@ function handleAdd() {
   form.value.parentCategoryId = ''
   form.value.parentCategoryName = ''
   form.value.nutritionTags = []
+  form.value.unitPrice = 0
 }
 
 function deleteItem(id) {
@@ -1353,6 +1534,16 @@ function deleteItem(id) {
 function useItem(item) {
   const amount = parseFloat(prompt(`消耗多少 ${item.unit}？`, '1'))
   if (isNaN(amount) || amount <= 0) return
+  purchaseCostStore.addConsumptionRecord({
+    name: item.name,
+    quantity: amount,
+    unit: item.unit,
+    type: 'consumed',
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    parentCategoryId: item.parentCategoryId,
+    parentCategoryName: item.parentCategoryName
+  })
   const newQuantity = Math.max(0, item.quantity - amount)
   if (newQuantity === 0) {
     if (confirm('用量已归零，是否删除？')) {
@@ -1488,6 +1679,20 @@ function handlePurchased(item) {
       zone: '冷藏'
     })
     linkedFridgeItemId = newFridgeItem.id
+  }
+
+  if (item.unitPrice > 0) {
+    purchaseCostStore.addCostRecord({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      unitPrice: item.unitPrice,
+      store: item.store || '',
+      categoryId: fridgeStore.getItemById(linkedFridgeItemId)?.categoryId || '',
+      categoryName: fridgeStore.getItemById(linkedFridgeItemId)?.categoryName || '',
+      parentCategoryId: fridgeStore.getItemById(linkedFridgeItemId)?.parentCategoryId || '',
+      parentCategoryName: fridgeStore.getItemById(linkedFridgeItemId)?.parentCategoryName || ''
+    })
   }
 
   shoppingStore.setPurchased(item.id, true, {
@@ -3458,5 +3663,310 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
   .shopping-store-select {
     width: calc(50% - 4px);
   }
+}
+
+.cost-preview-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.cost-preview-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #00796b;
+  padding: 8px 0;
+}
+
+.cost-analysis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.cost-analysis-header h2 {
+  margin: 0;
+}
+
+.cost-month-select {
+  padding: 6px 12px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #37474f;
+  background: white;
+  cursor: pointer;
+}
+
+.cost-month-select:focus {
+  outline: none;
+  border-color: #00897b;
+}
+
+.cost-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.cost-summary-item {
+  padding: 14px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.cost-summary-item.total {
+  background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+  border: 1px solid #80cbc4;
+}
+
+.cost-summary-item.count {
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  border: 1px solid #a5d6a7;
+}
+
+.cost-summary-num {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: #00695c;
+}
+
+.cost-summary-item.count .cost-summary-num {
+  font-size: 26px;
+  color: #2e7d32;
+}
+
+.cost-summary-label {
+  display: block;
+  font-size: 12px;
+  color: #546e7a;
+  margin-top: 4px;
+}
+
+.cost-subtitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #37474f;
+  font-weight: 600;
+}
+
+.cost-category-bars {
+  margin-bottom: 18px;
+  padding: 14px;
+  background: #f8faf9;
+  border-radius: 10px;
+}
+
+.cost-category-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cost-category-row:last-child {
+  margin-bottom: 0;
+}
+
+.cost-cat-name {
+  width: 72px;
+  font-size: 12px;
+  color: #546e7a;
+  font-weight: 500;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.cost-cat-bar-track {
+  flex: 1;
+  height: 18px;
+  background: #eceff1;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.cost-cat-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #26a69a, #00897b);
+  border-radius: 9px;
+  transition: width 0.3s ease;
+  min-width: 4px;
+}
+
+.cost-cat-amount {
+  width: 56px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #00796b;
+  flex-shrink: 0;
+}
+
+.cost-cat-percent {
+  width: 36px;
+  font-size: 11px;
+  color: #78909c;
+  flex-shrink: 0;
+}
+
+.cost-correlation {
+  margin-bottom: 18px;
+  padding: 14px;
+  background: #f5f7fa;
+  border-radius: 10px;
+}
+
+.correlation-table {
+  font-size: 12px;
+}
+
+.correlation-header-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.6fr 0.6fr 0.7fr 0.7fr;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #eceff1;
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+  color: #546e7a;
+}
+
+.correlation-data-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.6fr 0.6fr 0.7fr 0.7fr;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eceff1;
+  align-items: center;
+}
+
+.correlation-data-row:last-child {
+  border-bottom: none;
+}
+
+.corr-col {
+  text-align: center;
+  color: #455a64;
+}
+
+.corr-name {
+  text-align: left;
+  font-weight: 500;
+  color: #37474f;
+}
+
+.corr-waste-high {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.waste-rate-badge,
+.efficiency-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.waste-rate-badge.good,
+.efficiency-badge.good {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.waste-rate-badge.fair,
+.efficiency-badge.fair {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.waste-rate-badge.poor,
+.efficiency-badge.poor {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.correlation-insight {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #fff8e1, #ffecb3);
+  border-radius: 8px;
+  border: 1px solid #ffd54f;
+  border-left: 4px solid #ff9800;
+}
+
+.insight-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.insight-text {
+  font-size: 13px;
+  color: #5d4037;
+  line-height: 1.5;
+}
+
+.cost-detail-list {
+  margin-top: 4px;
+}
+
+.cost-detail-items {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cost-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8faf9;
+  border-radius: 8px;
+  border: 1px solid #eceff1;
+}
+
+.cost-detail-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cost-detail-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #37474f;
+}
+
+.cost-detail-cat {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: #e0f2f1;
+  color: #00695c;
+  border-radius: 8px;
+}
+
+.cost-detail-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cost-detail-qty {
+  font-size: 12px;
+  color: #78909c;
+}
+
+.cost-detail-total {
+  font-size: 14px;
+  font-weight: 600;
+  color: #00796b;
 }
 </style>
