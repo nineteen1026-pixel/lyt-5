@@ -35,12 +35,21 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, provide } from 'vue'
 import FridgeManager from '@/views/FridgeManager.vue'
 import MealPlan from '@/views/MealPlan.vue'
 import WasteReport from '@/views/WasteReport.vue'
 
 const currentView = ref('fridge')
+const scrollTarget = ref(null)
+
+function switchView(view, target = null) {
+  currentView.value = view
+  scrollTarget.value = target
+}
+
+provide('switchView', switchView)
+provide('scrollTarget', scrollTarget)
 </script>
 
 <style>
