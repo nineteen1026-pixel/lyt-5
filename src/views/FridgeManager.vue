@@ -1211,7 +1211,7 @@ const showImportPreview = ref(false)
 const importPreviewData = ref(null)
 const importMode = ref('merge')
 
-const costMonth = ref(getCurrentCostMonth())
+const costMonth = ref(purchaseCostStore.allCostMonths.length > 0 ? purchaseCostStore.allCostMonths[0] : getCurrentCostMonth())
 const showCostDetail = ref(false)
 
 function getCurrentCostMonth() {
@@ -1220,27 +1220,25 @@ function getCurrentCostMonth() {
 }
 
 watch(() => purchaseCostStore.allCostMonths, (newMonths, oldMonths) => {
-  const curMonth = getCurrentCostMonth()
-  if (newMonths.length === 0) {
-    costMonth.value = curMonth
-    return
-  }
-  const latestMonth = newMonths[0]
-  const prevLatest = (oldMonths && oldMonths.length > 0) ? oldMonths[0] : null
-  const latestMonthChanged = prevLatest !== null && latestMonth !== prevLatest
-  const currentInvalid = !costMonth.value || (!newMonths.includes(costMonth.value) && costMonth.value !== curMonth)
-  if (latestMonthChanged || currentInvalid) {
-    costMonth.value = latestMonth
+  if (newMonths.length > 0) {
+    const latestMonth = newMonths[0]
+    const prevLatest = (oldMonths && oldMonths.length > 0) ? oldMonths[0] : null
+    const latestMonthChanged = prevLatest !== null && latestMonth !== prevLatest
+    const currentInvalid = !costMonth.value || !newMonths.includes(costMonth.value)
+    if (latestMonthChanged || currentInvalid) {
+      costMonth.value = latestMonth
+    }
+  } else {
+    costMonth.value = getCurrentCostMonth()
   }
 }, { immediate: true })
 
 const costMonthOptions = computed(() => {
-  const curMonth = getCurrentCostMonth()
-  const base = [...purchaseCostStore.allCostMonths]
-  if (!base.includes(curMonth)) {
-    base.unshift(curMonth)
+  const months = [...purchaseCostStore.allCostMonths]
+  if (months.length === 0) {
+    months.push(getCurrentCostMonth())
   }
-  return base
+  return months
 })
 
 const currentCostSummary = computed(() => {
