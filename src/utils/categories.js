@@ -89,11 +89,14 @@ export const nutritionTags = [
   { id: 'high-fiber', name: '高纤维', color: '#ff9800' },
   { id: 'high-vitamin', name: '高维生素', color: '#9c27b0' },
   { id: 'low-carb', name: '低碳水', color: '#2196f3' },
+  { id: 'high-carb', name: '高碳水', color: '#ff5722' },
   { id: 'iron-rich', name: '补铁', color: '#795548' },
   { id: 'calcium-rich', name: '补钙', color: '#00bcd4' },
+  { id: 'iodine-rich', name: '补碘', color: '#607d8b' },
   { id: 'low-calorie', name: '低热量', color: '#8bc34a' },
-  { id: 'high-potassium', name: '高钾', color: '#ff5722' },
-  { id: 'omega3', name: '富含Omega-3', color: '#3f51b5' }
+  { id: 'high-potassium', name: '高钾', color: '#ff9800' },
+  { id: 'omega3', name: '富含Omega-3', color: '#3f51b5' },
+  { id: 'antioxidant', name: '抗氧化', color: '#9c27b0' }
 ]
 
 export const ingredientCategoryMap = {
@@ -263,6 +266,28 @@ export function getSubCategoryById(id) {
   return getAllSubCategories().find(c => c.id === id)
 }
 
+export const FALLBACK_CATEGORY_ID = 'other-food'
+
+const validTagIds = new Set(nutritionTags.map(t => t.id))
+
+export function sanitizeNutritionTags(tags) {
+  if (!Array.isArray(tags)) return []
+  return tags.filter(id => validTagIds.has(id))
+}
+
+export function isFallbackCategory(categoryId) {
+  return !categoryId || categoryId === FALLBACK_CATEGORY_ID
+}
+
+export function hasExactAliasMatch(ingredientName) {
+  const name = ingredientName.trim()
+  if (ingredientCategoryMap[name]) return true
+  for (const key in ingredientCategoryMap) {
+    if (name.includes(key) || key.includes(name)) return true
+  }
+  return false
+}
+
 export function getCategoryInfo(ingredientName) {
   const name = ingredientName.trim()
   let result = ingredientCategoryMap[name]
@@ -281,11 +306,11 @@ export function getCategoryInfo(ingredientName) {
       categoryName: subCategory ? subCategory.name : '',
       parentCategoryId: subCategory ? subCategory.parentId : '',
       parentCategoryName: subCategory ? subCategory.parentName : '',
-      nutritionTags: result.tags || []
+      nutritionTags: sanitizeNutritionTags(result.tags || [])
     }
   }
   return {
-    categoryId: 'other-food',
+    categoryId: FALLBACK_CATEGORY_ID,
     categoryName: '其他食材',
     parentCategoryId: 'other',
     parentCategoryName: '其他',
@@ -296,10 +321,13 @@ export function getCategoryInfo(ingredientName) {
 export function matchIngredientByCategory(ingredientName1, ingredientName2) {
   const info1 = getCategoryInfo(ingredientName1)
   const info2 = getCategoryInfo(ingredientName2)
-  if (info1.categoryId && info2.categoryId) {
-    return info1.categoryId === info2.categoryId
+  if (isFallbackCategory(info1.categoryId) || isFallbackCategory(info2.categoryId)) {
+    return false
   }
-  return false
+  if (!hasExactAliasMatch(ingredientName1) || !hasExactAliasMatch(ingredientName2)) {
+    return false
+  }
+  return info1.categoryId === info2.categoryId
 }
 
 export function getNutritionTagById(id) {

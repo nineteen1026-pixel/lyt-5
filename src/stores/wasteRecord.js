@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { generateId } from '@/utils/storage'
+import { sanitizeNutritionTags } from '@/utils/categories'
 
 const WASTE_RECORD_KEY = 'waste_records'
 
@@ -44,7 +45,7 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       categoryName: itemData.categoryName || '',
       parentCategoryId: itemData.parentCategoryId || '',
       parentCategoryName: itemData.parentCategoryName || '',
-      nutritionTags: itemData.nutritionTags || [],
+      nutritionTags: sanitizeNutritionTags(itemData.nutritionTags || []),
       discardedAt: now.toISOString(),
       month
     }

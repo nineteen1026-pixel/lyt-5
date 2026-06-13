@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
-import { getCategoryInfo } from '@/utils/categories'
+import { getCategoryInfo, sanitizeNutritionTags } from '@/utils/categories'
 
 const EXPIRING_DAYS_KEY = 'expiring_rule'
 
@@ -68,6 +68,9 @@ export const useFridgeStore = defineStore('fridge', () => {
 
   function addItem(itemData) {
     const categoryInfo = getCategoryInfo(itemData.name)
+    const rawTags = itemData.nutritionTags && itemData.nutritionTags.length > 0
+      ? itemData.nutritionTags
+      : categoryInfo.nutritionTags
     const newItem = {
       id: generateId(),
       name: itemData.name,
@@ -79,7 +82,7 @@ export const useFridgeStore = defineStore('fridge', () => {
       categoryName: itemData.categoryName || categoryInfo.categoryName,
       parentCategoryId: itemData.parentCategoryId || categoryInfo.parentCategoryId,
       parentCategoryName: itemData.parentCategoryName || categoryInfo.parentCategoryName,
-      nutritionTags: itemData.nutritionTags || categoryInfo.nutritionTags,
+      nutritionTags: sanitizeNutritionTags(rawTags),
       createdAt: new Date().toISOString()
     }
     items.value.push(newItem)
@@ -89,7 +92,11 @@ export const useFridgeStore = defineStore('fridge', () => {
   function updateItem(id, updates) {
     const index = items.value.findIndex(item => item.id === id)
     if (index !== -1) {
-      items.value[index] = { ...items.value[index], ...updates }
+      const cleanedUpdates = { ...updates }
+      if (cleanedUpdates.nutritionTags) {
+        cleanedUpdates.nutritionTags = sanitizeNutritionTags(cleanedUpdates.nutritionTags)
+      }
+      items.value[index] = { ...items.value[index], ...cleanedUpdates }
     }
   }
 

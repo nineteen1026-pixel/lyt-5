@@ -656,7 +656,9 @@ import {
   getCategoryInfo, 
   getNutritionTagById,
   getAllSubCategories,
-  matchIngredientByCategory
+  matchIngredientByCategory,
+  sanitizeNutritionTags,
+  isFallbackCategory
 } from '@/utils/categories'
 
 const fridgeStore = useFridgeStore()
@@ -802,6 +804,7 @@ function formatDate(dateStr) {
 
 function handleAdd() {
   if (!form.value.name.trim()) return
+  const cleanedTags = sanitizeNutritionTags(form.value.nutritionTags)
   fridgeStore.addItem({
     name: form.value.name.trim(),
     quantity: form.value.quantity,
@@ -812,7 +815,7 @@ function handleAdd() {
     categoryName: form.value.categoryName,
     parentCategoryId: form.value.parentCategoryId,
     parentCategoryName: form.value.parentCategoryName,
-    nutritionTags: form.value.nutritionTags
+    nutritionTags: cleanedTags
   })
   form.value.name = ''
   form.value.quantity = 1
