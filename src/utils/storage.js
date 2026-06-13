@@ -38,3 +38,68 @@ export function isExpiringSoon(expiryDate, days = 3) {
 export function isExpired(expiryDate) {
   return daysUntilExpiry(expiryDate) < 0
 }
+
+const NOTIFIED_ITEMS_KEY = 'notified_expiring_items'
+
+export function getNotifiedItems() {
+  try {
+    const data = localStorage.getItem(NOTIFIED_ITEMS_KEY)
+    return data ? JSON.parse(data) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function setNotifiedItems(items) {
+  try {
+    localStorage.setItem(NOTIFIED_ITEMS_KEY, JSON.stringify(items))
+  } catch {
+    console.error('Failed to save notified items to localStorage')
+  }
+}
+
+export function hasBeenNotified(itemId, expiryDate) {
+  const notified = getNotifiedItems()
+  return notified[itemId] === expiryDate
+}
+
+export function markAsNotified(itemId, expiryDate) {
+  const notified = getNotifiedItems()
+  notified[itemId] = expiryDate
+  setNotifiedItems(notified)
+}
+
+export function clearNotifiedItems() {
+  setNotifiedItems({})
+}
+
+export async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    console.warn('浏览器不支持通知功能')
+    return false
+  }
+  if (Notification.permission === 'granted') {
+    return true
+  }
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission()
+    return permission === 'granted'
+  }
+  return false
+}
+
+export function sendNotification(title, options = {}) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return null
+  }
+  const notification = new Notification(title, {
+    icon: '🧊',
+    badge: '🧊',
+    ...options
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+  return notification
+}

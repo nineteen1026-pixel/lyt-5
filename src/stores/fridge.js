@@ -1,10 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
+import { 
+  getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired,
+  hasBeenNotified, markAsNotified, clearNotifiedItems,
+  getNotifiedItems, setNotifiedItems,
+  requestNotificationPermission, sendNotification
+} from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
 import { getCategoryInfo, sanitizeNutritionTags } from '@/utils/categories'
 
 const EXPIRING_DAYS_KEY = 'expiring_rule'
+const NOTIFICATION_ENABLED_KEY = 'notification_enabled'
+const NOTIFICATION_DAYS_KEY = 'notification_days'
 
 function getStoredExpiringDays() {
   try {
@@ -23,9 +30,48 @@ function setStoredExpiringDays(days) {
   }
 }
 
+function getStoredNotificationEnabled() {
+  try {
+    const data = localStorage.getItem(NOTIFICATION_ENABLED_KEY)
+    return data ? JSON.parse(data) : false
+  } catch {
+    return false
+  }
+}
+
+function setStoredNotificationEnabled(enabled) {
+  try {
+    localStorage.setItem(NOTIFICATION_ENABLED_KEY, JSON.stringify(enabled))
+  } catch {
+    console.error('Failed to save notification setting to localStorage')
+  }
+}
+
+function getStoredNotificationDays() {
+  try {
+    const data = localStorage.getItem(NOTIFICATION_DAYS_KEY)
+    return data ? parseInt(data, 10) : 3
+  } catch {
+    return 3
+  }
+}
+
+function setStoredNotificationDays(days) {
+  try {
+    localStorage.setItem(NOTIFICATION_DAYS_KEY, days.toString())
+  } catch {
+    console.error('Failed to save notification days to localStorage')
+  }
+}
+
 export const useFridgeStore = defineStore('fridge', () => {
   const items = ref(getStoredItems())
   const expiringDays = ref(getStoredExpiringDays())
+  const notificationEnabled = ref(getStoredNotificationEnabled())
+  const notificationDays = ref(getStoredNotificationDays())
+  const notificationPermission = ref(
+    'Notification' in window ? Notification.permission : 'unsupported'
+  )
 
   const zones = ['冷藏', '冷冻', '保鲜', '门架']
 
@@ -43,6 +89,19 @@ export const useFridgeStore = defineStore('fridge', () => {
     )
   })
 
+  const notifiableItems = computed(() => {
+    return items.value.filter(item => {
+      const daysLeft = daysUntilExpiry(item.expiryDate)
+      return daysLeft >= 0 && daysLeft <= notificationDays.value && !isExpired(item.expiryDate)
+    })
+  })
+
+  const unnotifiedItems = computed(() => {
+    return notifiableItems.value.filter(item => 
+      !hasBeenNotified(item.id, item.expiryDate)
+    )
+  })
+
   function setExpiringDays(days) {
     const value = parseInt(days, 10)
     if (!isNaN(value) && value >= 1) {
@@ -52,6 +111,73 @@ export const useFridgeStore = defineStore('fridge', () => {
 
   function isExpiringSoonItem(expiryDate) {
     return isExpiringSoon(expiryDate, expiringDays.value)
+  }
+
+  async function enableNotification() {
+    const granted = await requestNotificationPermission()
+    if (granted) {
+      notificationEnabled.value = true
+      notificationPermission.value = 'granted'
+    }
+    return granted
+  }
+
+  function disableNotification() {
+    notificationEnabled.value = false
+  }
+
+  function setNotificationDays(days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      notificationDays.value = value
+    }
+  }
+
+  function checkNotificationPermission() {
+    if ('Notification' in window) {
+      notificationPermission.value = Notification.permission
+    }
+    return notificationPermission.value
+  }
+
+  function sendExpiringNotifications() {
+    if (!notificationEnabled.value || notificationPermission.value !== 'granted') {
+      return []
+    }
+
+    const itemsToNotify = unnotifiedItems.value
+    const notified = []
+
+    itemsToNotify.forEach(item => {
+      const daysLeft = daysUntilExpiry(item.expiryDate)
+      const title = daysLeft === 0 ? '⚠️ 食材今日过期' : `⏰ 食材即将过期`
+      const body = daysLeft === 0 
+        ? `${item.name} ${item.quantity}${item.unit} 今天就要过期了，请尽快处理！`
+        : `${item.name} ${item.quantity}${item.unit} 还剩 ${daysLeft} 天过期，请注意使用。`
+      
+      sendNotification(title, {
+        body,
+        tag: `expiring-${item.id}`,
+        renotify: false
+      })
+      
+      markAsNotified(item.id, item.expiryDate)
+      notified.push(item)
+    })
+
+    return notified
+  }
+
+  function resetNotificationRecord(itemId) {
+    const notified = getNotifiedItems()
+    if (itemId) {
+      delete notified[itemId]
+    } else {
+      for (const key in notified) {
+        delete notified[key]
+      }
+    }
+    setNotifiedItems(notified)
   }
 
   const expiredItems = computed(() => {
@@ -104,6 +230,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     const index = items.value.findIndex(item => item.id === id)
     if (index !== -1) {
       items.value.splice(index, 1)
+      resetNotificationRecord(id)
     }
   }
 
@@ -131,6 +258,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     const index = items.value.findIndex(item => item.id === id)
     if (index !== -1) {
       items.value.splice(index, 1)
+      resetNotificationRecord(id)
     }
   }
 
@@ -149,12 +277,31 @@ export const useFridgeStore = defineStore('fridge', () => {
     }
   )
 
+  watch(
+    notificationEnabled,
+    (newVal) => {
+      setStoredNotificationEnabled(newVal)
+    }
+  )
+
+  watch(
+    notificationDays,
+    (newVal) => {
+      setStoredNotificationDays(newVal)
+    }
+  )
+
   return {
     items,
     zones,
     expiringDays,
+    notificationEnabled,
+    notificationDays,
+    notificationPermission,
     sortedItems,
     expiringSoonItems,
+    notifiableItems,
+    unnotifiedItems,
     expiredItems,
     itemsByZone,
     addItem,
@@ -164,6 +311,12 @@ export const useFridgeStore = defineStore('fridge', () => {
     discardItem,
     setExpiringDays,
     isExpiringSoonItem,
+    enableNotification,
+    disableNotification,
+    setNotificationDays,
+    checkNotificationPermission,
+    sendExpiringNotifications,
+    resetNotificationRecord,
     daysUntilExpiry,
     isExpiringSoon,
     isExpired

@@ -610,6 +610,65 @@
           </div>
 
           <div class="settings-section">
+            <h4>🔔 临期浏览器通知</h4>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+              <input
+                type="checkbox"
+                v-model="settingsForm.notificationEnabled"
+                @change="handleNotificationEnabledChange"
+              />
+              <span>启用浏览器通知</span>
+            </label>
+            </div>
+            <div v-if="settingsForm.notificationEnabled" class="notification-subsection">
+              <div class="form-group">
+                <label>提前通知天数</label>
+                <select v-model.number="settingsForm.notificationDays" @change="handleNotificationDaysChange">
+                  <option :value="1">1 天</option>
+                  <option :value="2">2 天</option>
+                  <option :value="3">3 天</option>
+                  <option :value="5">5 天</option>
+                  <option :value="7">7 天</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>
+                  通知权限状态：
+                  <span :class="{
+                    'status-granted': fridgeStore.notificationPermission === 'granted',
+                    'status-denied': fridgeStore.notificationPermission === 'denied',
+                    'status-default': fridgeStore.notificationPermission === 'default'
+                  }">
+                    {{ getPermissionStatusText() }}
+                  </span>
+                </label>
+                <button
+                  v-if="fridgeStore.notificationPermission !== 'granted'"
+                  class="btn btn-small btn-primary"
+                  type="button"
+                  @click="handleRequestNotificationPermission"
+                >
+                  {{ fridgeStore.notificationPermission === 'denied' ? '已被拒绝，请在浏览器设置中开启' : '请求通知权限' }}
+                </button>
+              </div>
+              <div class="form-group">
+                <button
+                  class="btn btn-small"
+                  type="button"
+                  @click="handleTestNotification"
+                  :disabled="fridgeStore.notificationPermission !== 'granted'"
+                >
+                  发送测试通知
+                </button>
+              </div>
+            </div>
+            <p class="settings-desc">
+              开启后，当食材在设定天数内即将过期时，浏览器会推送桌面通知提醒您。同一项食材只会在保质期内提醒一次，避免重复打扰。
+            </p>
+          </div>
+
+          <div class="settings-section">
             <h4>🏪 门店管理</h4>
             <div class="store-manage-row">
               <input
@@ -646,10 +705,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useFridgeStore } from '@/stores/fridge'
 import { useShoppingListStore } from '@/stores/shoppingList'
 import { getRecipeSuggestions } from '@/utils/recipes'
+import { sendNotification } from '@/utils/storage'
 import { 
   categories, 
   nutritionTags, 
@@ -677,7 +737,9 @@ const settingsForm = ref({
   defaultStore: '',
   quantityMultiplier: 1.5,
   autoAddToShopping: false,
-  useLastPrice: true
+  useLastPrice: true,
+  notificationEnabled: false,
+  notificationDays: 3
 })
 const newStoreName = ref('')
 
@@ -1016,6 +1078,9 @@ function openSettings() {
   settingsForm.value.quantityMultiplier = shoppingStore.replenishRules.quantityMultiplier
   settingsForm.value.autoAddToShopping = shoppingStore.replenishRules.autoAddToShopping
   settingsForm.value.useLastPrice = shoppingStore.replenishRules.useLastPrice
+  settingsForm.value.notificationEnabled = fridgeStore.notificationEnabled
+  settingsForm.value.notificationDays = fridgeStore.notificationDays
+  fridgeStore.checkNotificationPermission()
   showSettings.value = true
 }
 
@@ -1103,6 +1168,88 @@ function handleBatchExpiring() {
     alert('临期食材已全部在购物清单中。')
   }
 }
+
+function getPermissionStatusText() {
+  switch (fridgeStore.notificationPermission) {
+    case 'granted':
+      return '已允许'
+    case 'denied':
+      return '已拒绝'
+    case 'default':
+      return '未设置'
+    default:
+      return '不支持'
+  }
+}
+
+async function handleRequestNotificationPermission() {
+  const granted = await fridgeStore.enableNotification()
+  if (granted) {
+    settingsForm.value.notificationEnabled = true
+    fridgeStore.checkNotificationPermission()
+  }
+}
+
+function handleNotificationEnabledChange() {
+  if (settingsForm.value.notificationEnabled) {
+    fridgeStore.enableNotification()
+  } else {
+    fridgeStore.disableNotification()
+  }
+}
+
+function handleNotificationDaysChange() {
+  fridgeStore.setNotificationDays(settingsForm.value.notificationDays)
+}
+
+function handleTestNotification() {
+  if (fridgeStore.notificationPermission !== 'granted') {
+    alert('请先允许浏览器通知权限')
+    return
+  }
+  sendNotification('🧊 冰箱管理 - 测试通知', {
+    body: '浏览器通知功能已正常启用！当有食材即将过期时，您将收到提醒。',
+    tag: 'test-notification'
+  })
+}
+
+let notificationCheckTimer = null
+
+function startNotificationCheck() {
+  if (notificationCheckTimer) {
+    clearInterval(notificationCheckTimer)
+  }
+  
+  fridgeStore.sendExpiringNotifications()
+  
+  notificationCheckTimer = setInterval(() => {
+    fridgeStore.sendExpiringNotifications()
+  }, 60 * 1000)
+}
+
+function stopNotificationCheck() {
+  if (notificationCheckTimer) {
+    clearInterval(notificationCheckTimer)
+    notificationCheckTimer = null
+  }
+}
+
+onMounted(() => {
+  fridgeStore.checkNotificationPermission()
+  startNotificationCheck()
+})
+
+onUnmounted(() => {
+  stopNotificationCheck()
+})
+
+watch(() => fridgeStore.notificationEnabled, (enabled) => {
+  if (enabled) {
+    startNotificationCheck()
+  } else {
+    stopNotificationCheck()
+  }
+})
 </script>
 
 <style scoped>
@@ -2306,6 +2453,37 @@ function handleBatchExpiring() {
   padding: 2px 6px;
   border-radius: 8px;
   font-weight: 500;
+}
+
+.notification-subsection {
+  margin-top: 12px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #00897b;
+}
+
+.notification-subsection .form-group {
+  margin-bottom: 14px;
+}
+
+.notification-subsection .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.status-granted {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.status-denied {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.status-default {
+  color: #f57c00;
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {
