@@ -37,24 +37,50 @@
       <template v-else>
         <div class="summary-cards">
           <div class="summary-card total">
-            <div class="summary-icon">🗑️</div>
+            <div class="summary-icon">📊</div>
             <div class="summary-num">{{ currentSummary.totalCount }}</div>
+            <div class="summary-label">处置总计</div>
+          </div>
+          <div class="summary-card waste">
+            <div class="summary-icon">🗑️</div>
+            <div class="summary-num">{{ currentSummary.totalWasteCount }}</div>
             <div class="summary-label">浪费总计</div>
           </div>
-          <div class="summary-card expired">
-            <div class="summary-icon">⏰</div>
-            <div class="summary-num">{{ currentSummary.expiredCount }}</div>
-            <div class="summary-label">过期丢弃</div>
+          <div class="summary-card consumption">
+            <div class="summary-icon">🍽️</div>
+            <div class="summary-num">{{ currentSummary.naturalConsumptionCount }}</div>
+            <div class="summary-label">自然消耗</div>
           </div>
-          <div class="summary-card discarded">
-            <div class="summary-icon">🚫</div>
-            <div class="summary-num">{{ currentSummary.discardedCount }}</div>
-            <div class="summary-label">手动丢弃</div>
+        </div>
+
+        <div class="reason-breakdown card">
+          <h2>🏷️ 处置原因分布</h2>
+          <div class="reason-bars">
+            <div
+              v-for="(data, key) in currentSummary.byReason"
+              :key="key"
+              class="reason-row"
+              :class="{ 'is-waste': data.isWaste, 'is-consumption': !data.isWaste }"
+            >
+              <span class="reason-label">
+                <span class="reason-icon">{{ data.icon }}</span>
+                {{ data.label }}
+              </span>
+              <div class="reason-bar-track">
+                <div
+                  class="reason-bar-fill"
+                  :class="key"
+                  :style="{ width: (data.count / currentSummary.totalCount * 100) + '%' }"
+                ></div>
+              </div>
+              <span class="reason-count">{{ data.count }}件</span>
+              <span v-if="!data.isWaste" class="reason-tag non-waste">非浪费</span>
+            </div>
           </div>
         </div>
 
         <div class="trend-chart card">
-          <h2>📈 浪费趋势</h2>
+          <h2>📈 处置趋势</h2>
           <div class="chart-container">
             <div
               v-for="item in trendData"
@@ -63,14 +89,29 @@
             >
               <div class="chart-bars">
                 <div
+                  class="chart-bar natural_consumption-bar"
+                  :style="{ height: getBarHeight(item.naturalConsumption, maxTrendValue) + 'px' }"
+                  :title="`自然消耗: ${item.naturalConsumption}`"
+                ></div>
+                <div
                   class="chart-bar expired-bar"
                   :style="{ height: getBarHeight(item.expired, maxTrendValue) + 'px' }"
                   :title="`过期: ${item.expired}`"
                 ></div>
                 <div
+                  class="chart-bar spoiled-bar"
+                  :style="{ height: getBarHeight(item.spoiled, maxTrendValue) + 'px' }"
+                  :title="`变质: ${item.spoiled}`"
+                ></div>
+                <div
                   class="chart-bar discarded-bar"
                   :style="{ height: getBarHeight(item.discarded, maxTrendValue) + 'px' }"
                   :title="`丢弃: ${item.discarded}`"
+                ></div>
+                <div
+                  class="chart-bar other-bar"
+                  :style="{ height: getBarHeight(item.other, maxTrendValue) + 'px' }"
+                  :title="`其他: ${item.other}`"
                 ></div>
               </div>
               <div class="chart-label">{{ formatMonthShort(item.month) }}</div>
@@ -78,16 +119,25 @@
           </div>
           <div class="chart-legend">
             <span class="legend-item">
+              <span class="legend-dot natural_consumption-dot"></span>自然消耗
+            </span>
+            <span class="legend-item">
               <span class="legend-dot expired-dot"></span>过期丢弃
             </span>
             <span class="legend-item">
+              <span class="legend-dot spoiled-dot"></span>变质丢弃
+            </span>
+            <span class="legend-item">
               <span class="legend-dot discarded-dot"></span>手动丢弃
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot other-dot"></span>其他原因
             </span>
           </div>
         </div>
 
         <div class="zone-breakdown card" v-if="Object.keys(currentSummary.byZone).length > 0">
-          <h2>🏷️ 分区浪费分布</h2>
+          <h2>🏷️ 分区处置分布</h2>
           <div class="zone-bars">
             <div
               v-for="(data, zone) in currentSummary.byZone"
@@ -97,12 +147,24 @@
               <span class="zone-label">{{ zone }}</span>
               <div class="zone-bar-track">
                 <div
+                  class="zone-bar-fill natural_consumption-fill"
+                  :style="{ width: (data.naturalConsumption / currentSummary.totalCount * 100) + '%' }"
+                ></div>
+                <div
                   class="zone-bar-fill expired-fill"
                   :style="{ width: (data.expired / currentSummary.totalCount * 100) + '%' }"
                 ></div>
                 <div
+                  class="zone-bar-fill spoiled-fill"
+                  :style="{ width: (data.spoiled / currentSummary.totalCount * 100) + '%' }"
+                ></div>
+                <div
                   class="zone-bar-fill discarded-fill"
                   :style="{ width: (data.discarded / currentSummary.totalCount * 100) + '%' }"
+                ></div>
+                <div
+                  class="zone-bar-fill other-fill"
+                  :style="{ width: (data.other / currentSummary.totalCount * 100) + '%' }"
                 ></div>
               </div>
               <span class="zone-count">{{ data.total }}件</span>
@@ -125,8 +187,17 @@
                 <span v-if="item.reasons.expired > 0" class="reason-tag expired-tag">
                   过期×{{ item.reasons.expired }}
                 </span>
+                <span v-if="item.reasons.spoiled > 0" class="reason-tag spoiled-tag">
+                  变质×{{ item.reasons.spoiled }}
+                </span>
                 <span v-if="item.reasons.discarded > 0" class="reason-tag discarded-tag">
                   丢弃×{{ item.reasons.discarded }}
+                </span>
+                <span v-if="item.reasons.other > 0" class="reason-tag other-tag">
+                  其他×{{ item.reasons.other }}
+                </span>
+                <span v-if="item.reasons.natural_consumption > 0" class="reason-tag natural_consumption-tag">
+                  消耗×{{ item.reasons.natural_consumption }}
                 </span>
               </div>
             </div>
@@ -134,7 +205,7 @@
         </div>
 
         <div class="detail-list card">
-          <h2>📋 浪费明细</h2>
+          <h2>📋 处置明细</h2>
           <div v-if="currentSummary.details.length === 0" class="empty-tip">
             该月份暂无记录
           </div>
@@ -143,14 +214,33 @@
               v-for="record in currentSummary.details"
               :key="record.id"
               class="detail-item"
-              :class="{ 'reason-expired': record.reason === 'expired', 'reason-discarded': record.reason === 'discarded' }"
+              :class="[
+                'reason-' + record.reason,
+                { 'is-waste': wasteStore.getDisposalReasonInfo(record.reason).isWaste }
+              ]"
             >
               <div class="detail-left">
                 <span class="detail-reason-icon">
-                  {{ record.reason === 'expired' ? '⏰' : '🚫' }}
+                  {{ wasteStore.DISPOSAL_REASONS[record.reason]?.icon || '📝' }}
                 </span>
-                <span class="detail-name">{{ record.name }}</span>
-                <span class="detail-zone-tag">{{ record.zone }}</span>
+                <div class="detail-info">
+                  <div class="detail-name-row">
+                    <span class="detail-name">{{ record.name }}</span>
+                    <span class="detail-zone-tag">{{ record.zone }}</span>
+                    <span 
+                      v-if="!wasteStore.getDisposalReasonInfo(record.reason).isWaste" 
+                      class="detail-consumption-tag"
+                    >
+                      自然消耗
+                    </span>
+                  </div>
+                  <div class="detail-reason-label">
+                    {{ wasteStore.DISPOSAL_REASONS[record.reason]?.label || '其他原因' }}
+                  </div>
+                  <div v-if="record.disposalNote" class="detail-note">
+                    📝 {{ record.disposalNote }}
+                  </div>
+                </div>
               </div>
               <div class="detail-right">
                 <span class="detail-qty">{{ record.quantity }} {{ record.unit }}</span>
@@ -189,7 +279,7 @@ const trendData = computed(() => {
 
 const maxTrendValue = computed(() => {
   if (trendData.value.length === 0) return 1
-  return Math.max(...trendData.value.map(d => Math.max(d.expired, d.discarded)), 1)
+  return Math.max(...trendData.value.map(d => Math.max(d.expired, d.discarded, d.spoiled, d.other, d.naturalConsumption)), 1)
 })
 
 function getBarHeight(value, max) {
@@ -337,15 +427,23 @@ function formatDateTime(isoStr) {
 }
 
 .summary-card.total::before {
+  background: linear-gradient(90deg, #1565c0, #42a5f5);
+}
+
+.summary-card.waste::before {
   background: linear-gradient(90deg, #c62828, #ef5350);
 }
 
-.summary-card.expired::before {
-  background: linear-gradient(90deg, #e65100, #ff9800);
+.summary-card.consumption::before {
+  background: linear-gradient(90deg, #2e7d32, #66bb6a);
 }
 
-.summary-card.discarded::before {
-  background: linear-gradient(90deg, #455a64, #78909c);
+.summary-card.waste .summary-num {
+  color: #c62828;
+}
+
+.summary-card.consumption .summary-num {
+  color: #2e7d32;
 }
 
 .summary-icon {
@@ -408,12 +506,24 @@ function formatDateTime(isoStr) {
   transition: height 0.3s ease;
 }
 
+.natural_consumption-bar {
+  background: linear-gradient(180deg, #66bb6a, #2e7d32);
+}
+
 .expired-bar {
   background: linear-gradient(180deg, #ff9800, #e65100);
 }
 
+.spoiled-bar {
+  background: linear-gradient(180deg, #ef5350, #c62828);
+}
+
 .discarded-bar {
   background: linear-gradient(180deg, #90a4ae, #455a64);
+}
+
+.other-bar {
+  background: linear-gradient(180deg, #b39ddb, #7e57c2);
 }
 
 .chart-label {
@@ -444,12 +554,126 @@ function formatDateTime(isoStr) {
   border-radius: 3px;
 }
 
+.legend-dot.natural_consumption-dot {
+  background: #2e7d32;
+}
+
 .legend-dot.expired-dot {
   background: #e65100;
 }
 
+.legend-dot.spoiled-dot {
+  background: #c62828;
+}
+
 .legend-dot.discarded-dot {
   background: #607d8b;
+}
+
+.legend-dot.other-dot {
+  background: #7e57c2;
+}
+
+.reason-breakdown {
+  margin-top: 20px;
+}
+
+.reason-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reason-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.reason-row:hover {
+  background: #fafafa;
+}
+
+.reason-row.is-waste {
+  background: #fff8f0;
+}
+
+.reason-row.is-consumption {
+  background: #f1f8e9;
+}
+
+.reason-row .reason-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 90px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #37474f;
+  flex-shrink: 0;
+}
+
+.reason-row .reason-icon {
+  font-size: 18px;
+}
+
+.reason-bar-track {
+  flex: 1;
+  height: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reason-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 8px;
+}
+
+.reason-bar-fill.expired {
+  background: linear-gradient(90deg, #ff9800, #e65100);
+}
+
+.reason-bar-fill.spoiled {
+  background: linear-gradient(90deg, #ef5350, #c62828);
+}
+
+.reason-bar-fill.discarded {
+  background: linear-gradient(90deg, #90a4ae, #455a64);
+}
+
+.reason-bar-fill.other {
+  background: linear-gradient(90deg, #b39ddb, #7e57c2);
+}
+
+.reason-bar-fill.natural_consumption {
+  background: linear-gradient(90deg, #66bb6a, #2e7d32);
+}
+
+.reason-row .reason-count {
+  width: 40px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: #37474f;
+  flex-shrink: 0;
+}
+
+.reason-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.reason-tag.non-waste {
+  background: #c8e6c9;
+  color: #2e7d32;
 }
 
 .zone-bars {
@@ -486,12 +710,24 @@ function formatDateTime(isoStr) {
   transition: width 0.3s ease;
 }
 
+.natural_consumption-fill {
+  background: linear-gradient(90deg, #66bb6a, #2e7d32);
+}
+
 .expired-fill {
   background: linear-gradient(90deg, #ff9800, #e65100);
 }
 
+.spoiled-fill {
+  background: linear-gradient(90deg, #ef5350, #c62828);
+}
+
 .discarded-fill {
   background: linear-gradient(90deg, #90a4ae, #607d8b);
+}
+
+.other-fill {
+  background: linear-gradient(90deg, #b39ddb, #7e57c2);
 }
 
 .zone-count {
@@ -561,9 +797,24 @@ function formatDateTime(isoStr) {
   color: #e65100;
 }
 
+.spoiled-tag {
+  background: #ffebee;
+  color: #c62828;
+}
+
 .discarded-tag {
   background: #eceff1;
   color: #455a64;
+}
+
+.other-tag {
+  background: #ede7f6;
+  color: #7e57c2;
+}
+
+.natural_consumption-tag {
+  background: #e8f5e9;
+  color: #2e7d32;
 }
 
 .detail-items {
@@ -593,14 +844,70 @@ function formatDateTime(isoStr) {
   border-left-color: #e65100;
 }
 
+.detail-item.reason-spoiled {
+  border-left-color: #c62828;
+}
+
 .detail-item.reason-discarded {
   border-left-color: #607d8b;
 }
 
+.detail-item.reason-other {
+  border-left-color: #7e57c2;
+}
+
+.detail-item.reason-natural_consumption {
+  border-left-color: #2e7d32;
+  background: #f1f8e9;
+}
+
+.detail-item.is-waste {
+  background: #fafafa;
+}
+
 .detail-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  flex: 1;
+}
+
+.detail-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-reason-label {
+  font-size: 12px;
+  color: #78909c;
+  font-weight: 500;
+}
+
+.detail-note {
+  font-size: 12px;
+  color: #546e7a;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.detail-consumption-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #c8e6c9;
+  color: #2e7d32;
+  border-radius: 8px;
+  font-weight: 600;
 }
 
 .detail-reason-icon {

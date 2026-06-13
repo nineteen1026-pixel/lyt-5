@@ -474,7 +474,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     return items.value.find(item => item.id === id)
   }
 
-  function discardItem(id, reason = 'discarded') {
+  function discardItem(id, reason = 'discarded', disposalNote = '') {
     const item = items.value.find(item => item.id === id)
     if (!item) return
     const wasteStore = useWasteRecordStore()
@@ -484,6 +484,7 @@ export const useFridgeStore = defineStore('fridge', () => {
       unit: item.unit,
       zone: item.zone,
       reason,
+      disposalNote,
       expiryDate: item.expiryDate,
       categoryId: item.categoryId,
       categoryName: item.categoryName,
@@ -492,11 +493,12 @@ export const useFridgeStore = defineStore('fridge', () => {
       nutritionTags: item.nutritionTags
     })
     const purchaseCostStore = usePurchaseCostStore()
+    const isNaturalConsumption = reason === 'natural_consumption'
     purchaseCostStore.addConsumptionRecord({
       name: item.name,
       quantity: item.quantity,
       unit: item.unit,
-      type: 'wasted',
+      type: isNaturalConsumption ? 'consumed' : 'wasted',
       categoryId: item.categoryId,
       categoryName: item.categoryName,
       parentCategoryId: item.parentCategoryId,

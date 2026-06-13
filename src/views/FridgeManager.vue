@@ -1379,6 +1379,82 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showDisposalDialog" class="disposal-dialog-overlay" @click.self="cancelDisposal">
+      <div class="disposal-dialog">
+        <div class="disposal-dialog-header">
+          <h3>🗑️ 处置原因</h3>
+          <button class="disposal-dialog-close" @click="cancelDisposal">✕</button>
+        </div>
+        <div class="disposal-dialog-body" v-if="disposalDialogItem">
+          <div class="disposal-item-info">
+            <div class="disposal-item-name">{{ disposalDialogItem.name }}</div>
+            <div class="disposal-item-meta">
+              <span class="disposal-item-qty">{{ disposalDialogItem.quantity }} {{ disposalDialogItem.unit }}</span>
+              <span class="disposal-item-zone">{{ disposalDialogItem.zone }}</span>
+              <span 
+                class="disposal-item-expiry"
+                :class="{
+                  'expired': fridgeStore.isExpired(disposalDialogItem.expiryDate),
+                  'expiring': fridgeStore.isExpiringSoonItem(disposalDialogItem.expiryDate) && !fridgeStore.isExpired(disposalDialogItem.expiryDate)
+                }"
+              >
+                {{ fridgeStore.isExpired(disposalDialogItem.expiryDate) ? '已过期' : '还剩 ' + fridgeStore.daysUntilExpiry(disposalDialogItem.expiryDate) + ' 天' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>选择处置原因</label>
+            <div class="disposal-reason-grid">
+              <button
+                v-for="(info, key) in wasteRecordStore.DISPOSAL_REASONS"
+                :key="key"
+                type="button"
+                class="disposal-reason-btn"
+                :class="{ 
+                  active: disposalForm.reason === key,
+                  'is-waste': info.isWaste,
+                  'is-consumption': !info.isWaste
+                }"
+                @click="disposalForm.reason = key"
+              >
+                <span class="reason-icon">{{ info.icon }}</span>
+                <span class="reason-label">{{ info.label }}</span>
+                <span v-if="!info.isWaste" class="reason-badge">非浪费</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>备注说明（可选）</label>
+            <textarea
+              v-model="disposalForm.disposalNote"
+              class="disposal-note-input"
+              placeholder="请输入处置的具体原因或说明..."
+              rows="3"
+            ></textarea>
+          </div>
+
+          <div class="disposal-summary" :class="wasteRecordStore.DISPOSAL_REASONS[disposalForm.reason].isWaste ? 'waste' : 'consumption'">
+            <span class="summary-icon">
+              {{ wasteRecordStore.DISPOSAL_REASONS[disposalForm.reason].isWaste ? '⚠️' : '✅' }}
+            </span>
+            <span class="summary-text">
+              {{ wasteRecordStore.DISPOSAL_REASONS[disposalForm.reason].isWaste 
+                ? '此记录将计入浪费统计' 
+                : '此记录将计入自然消耗，不计入浪费' }}
+            </span>
+          </div>
+        </div>
+        <div class="disposal-dialog-footer">
+          <button class="btn btn-small" @click="cancelDisposal">取消</button>
+          <button class="btn btn-primary" @click="confirmDisposal">
+            确认处置
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1528,6 +1604,13 @@ const batchForm = ref({
 const showImportPreview = ref(false)
 const importPreviewData = ref(null)
 const importMode = ref('merge')
+
+const showDisposalDialog = ref(false)
+const disposalDialogItem = ref(null)
+const disposalForm = ref({
+  reason: 'discarded',
+  disposalNote: ''
+})
 
 const costMonth = ref(purchaseCostStore.allCostMonths.length > 0 ? purchaseCostStore.allCostMonths[0] : getCurrentCostMonth())
 const showCostDetail = ref(false)
@@ -1860,11 +1943,41 @@ function handleAdd() {
 function deleteItem(id) {
   const item = fridgeStore.getItemById(id)
   if (!item) return
-  const reason = fridgeStore.isExpired(item.expiryDate) ? 'expired' : 'discarded'
-  const label = reason === 'expired' ? '过期丢弃' : '手动丢弃'
-  if (confirm(`确定要${label}这个食材吗？此操作将记录到浪费报表。`)) {
-    fridgeStore.discardItem(id, reason)
+  const isExpired = fridgeStore.isExpired(item.expiryDate)
+  const isExpiringSoon = fridgeStore.isExpiringSoonItem(item.expiryDate)
+  
+  if (isExpired || isExpiringSoon) {
+    disposalDialogItem.value = item
+    disposalForm.value.reason = isExpired ? 'expired' : 'natural_consumption'
+    disposalForm.value.disposalNote = ''
+    showDisposalDialog.value = true
+  } else {
+    const reason = 'discarded'
+    if (confirm('确定要删除这个食材吗？此操作将记录到浪费报表。')) {
+      fridgeStore.discardItem(id, reason, '')
+    }
   }
+}
+
+function confirmDisposal() {
+  if (!disposalDialogItem.value) return
+  const reason = disposalForm.value.reason
+  const disposalNote = disposalForm.value.disposalNote.trim()
+  const reasonInfo = wasteRecordStore.DISPOSAL_REASONS[reason]
+  const confirmText = reasonInfo.isWaste
+    ? `确定要${reasonInfo.label}这个食材吗？此操作将记录到浪费报表。`
+    : `确定要记录为「${reasonInfo.label}」吗？此操作将纳入消耗统计。`
+  if (confirm(confirmText)) {
+    fridgeStore.discardItem(disposalDialogItem.value.id, reason, disposalNote)
+    cancelDisposal()
+  }
+}
+
+function cancelDisposal() {
+  showDisposalDialog.value = false
+  disposalDialogItem.value = null
+  disposalForm.value.reason = 'discarded'
+  disposalForm.value.disposalNote = ''
 }
 
 function useItem(item) {
@@ -5083,5 +5196,246 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 
 .regression-dialog-footer .btn {
   min-width: 120px;
+}
+
+.disposal-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.disposal-dialog {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.disposal-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #eceff1;
+}
+
+.disposal-dialog-header h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #37474f;
+}
+
+.disposal-dialog-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #90a4ae;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.disposal-dialog-close:hover {
+  background: #f5f5f5;
+  color: #546e7a;
+}
+
+.disposal-dialog-body {
+  padding: 24px;
+}
+
+.disposal-item-info {
+  background: linear-gradient(135deg, #f3e5f5 0%, #e8f5e9 100%);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.disposal-item-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #37474f;
+  margin-bottom: 8px;
+}
+
+.disposal-item-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.disposal-item-qty,
+.disposal-item-zone {
+  font-size: 13px;
+  padding: 4px 10px;
+  background: white;
+  border-radius: 12px;
+  color: #546e7a;
+  font-weight: 500;
+}
+
+.disposal-item-expiry {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.disposal-item-expiry.expired {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.disposal-item-expiry.expiring {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.disposal-reason-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.disposal-reason-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  position: relative;
+}
+
+.disposal-reason-btn:hover {
+  border-color: #90caf9;
+  background: #f5faff;
+}
+
+.disposal-reason-btn.active {
+  border-color: #1976d2;
+  background: #e3f2fd;
+}
+
+.disposal-reason-btn.active.is-waste {
+  border-color: #c62828;
+  background: #ffebee;
+}
+
+.disposal-reason-btn.active.is-consumption {
+  border-color: #2e7d32;
+  background: #e8f5e9;
+}
+
+.reason-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.reason-label {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #37474f;
+}
+
+.reason-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #c8e6c9;
+  color: #2e7d32;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.disposal-note-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #37474f;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  margin-top: 8px;
+}
+
+.disposal-note-input:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+
+.disposal-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  margin-top: 20px;
+}
+
+.disposal-summary.waste {
+  background: #fff3e0;
+  border: 1px solid #ffe0b2;
+}
+
+.disposal-summary.consumption {
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+}
+
+.disposal-summary .summary-icon {
+  font-size: 20px;
+}
+
+.disposal-summary .summary-text {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #546e7a;
+}
+
+.disposal-dialog-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #eceff1;
+  background: #fafafa;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.disposal-dialog-footer .btn {
+  min-width: 100px;
+}
+
+@media (max-width: 600px) {
+  .disposal-reason-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .disposal-dialog {
+    max-height: 85vh;
+  }
 }
 </style>
