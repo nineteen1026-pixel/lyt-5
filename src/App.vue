@@ -12,6 +12,13 @@
         </button>
         <button
           class="nav-link"
+          :class="{ active: currentView === 'leftover' }"
+          @click="currentView = 'leftover'"
+        >
+          🍱 剩菜管理
+        </button>
+        <button
+          class="nav-link"
           :class="{ active: currentView === 'mealplan' }"
           @click="currentView = 'mealplan'"
         >
@@ -28,6 +35,7 @@
     </nav>
     <main class="main-view">
       <FridgeManager v-if="currentView === 'fridge'" />
+      <LeftoverManager v-else-if="currentView === 'leftover'" />
       <MealPlan v-else-if="currentView === 'mealplan'" />
       <WasteReport v-else-if="currentView === 'waste'" />
     </main>
@@ -37,6 +45,7 @@
 <script setup>
 import { ref, provide } from 'vue'
 import FridgeManager from '@/views/FridgeManager.vue'
+import LeftoverManager from '@/views/LeftoverManager.vue'
 import MealPlan from '@/views/MealPlan.vue'
 import WasteReport from '@/views/WasteReport.vue'
 

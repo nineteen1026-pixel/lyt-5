@@ -32,6 +32,14 @@
           </div>
           <span class="todo-arrow">→</span>
         </div>
+        <div class="todo-card leftover" @click="goToLeftoverItems">
+          <div class="todo-icon">🍱</div>
+          <div class="todo-info">
+            <span class="todo-count">{{ leftoverStore.expiringSoonItems.length }}</span>
+            <span class="todo-label">临期剩菜</span>
+          </div>
+          <span class="todo-arrow">→</span>
+        </div>
       </div>
     </div>
 
@@ -1085,6 +1093,7 @@ import { useShoppingListStore } from '@/stores/shoppingList'
 import { useMealPlanStore } from '@/stores/mealPlan'
 import { usePurchaseCostStore } from '@/stores/purchaseCost'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
+import { useLeftoverStore } from '@/stores/leftover'
 import { getRecipeSuggestions } from '@/utils/recipes'
 import { sendNotification } from '@/utils/storage'
 import { 
@@ -1110,6 +1119,7 @@ const shoppingStore = useShoppingListStore()
 const mealPlanStore = useMealPlanStore()
 const purchaseCostStore = usePurchaseCostStore()
 const wasteRecordStore = useWasteRecordStore()
+const leftoverStore = useLeftoverStore()
 const switchView = inject('switchView')
 const scrollTarget = inject('scrollTarget')
 
@@ -1164,6 +1174,12 @@ function goToShoppingList() {
       shoppingListEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   })
+}
+
+function goToLeftoverItems() {
+  if (switchView) {
+    switchView('leftover')
+  }
 }
 
 onMounted(() => {
@@ -1996,8 +2012,14 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 
 .todo-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .todo-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .todo-card {
@@ -2041,6 +2063,15 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 
 .todo-card.shopping:hover {
   border-color: #00897b;
+}
+
+.todo-card.leftover {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-color: #ffcc80;
+}
+
+.todo-card.leftover:hover {
+  border-color: #ff9800;
 }
 
 .todo-icon {
