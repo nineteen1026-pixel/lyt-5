@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { generateId } from '@/utils/storage'
 import { getTotalIngredients, getAllRecipes, getRecipeSuggestions } from '@/utils/recipes'
+import { matchIngredientByCategory } from '@/utils/categories'
 
 const MEAL_PLAN_KEY = 'meal_plan'
 
@@ -76,6 +77,8 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
       ingredients: recipe.ingredients,
       steps: recipe.steps,
       description: recipe.description,
+      cooked: false,
+      cookedAt: null,
       addedAt: new Date().toISOString()
     }
     
@@ -89,6 +92,104 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
       if (index !== -1) {
         mealPlan.value[date][mealTime].splice(index, 1)
       }
+    }
+  }
+
+  function toggleMealCooked(date, mealTime, mealId) {
+    const meals = getMeals(date, mealTime)
+    const meal = meals.find(m => m.id === mealId)
+    if (meal) {
+      meal.cooked = !meal.cooked
+      meal.cookedAt = meal.cooked ? new Date().toISOString() : null
+    }
+  }
+
+  function getMealById(date, mealTime, mealId) {
+    const meals = getMeals(date, mealTime)
+    return meals.find(m => m.id === mealId) || null
+  }
+
+  function deductMealFromFridge(mealId, fridgeStore) {
+    let meal = null
+    let mealDate = null
+    let mealTime = null
+    
+    for (const date of weekDates.value) {
+      for (const time of MEAL_TIMES) {
+        const found = getMeals(date, time).find(m => m.id === mealId)
+        if (found) {
+          meal = found
+          mealDate = date
+          mealTime = time
+          break
+        }
+      }
+      if (meal) break
+    }
+    
+    if (!meal) {
+      return { success: false, message: '未找到该菜品' }
+    }
+    
+    if (meal.cooked && meal.ingredientsDeducted) {
+      return { success: false, message: '该菜品已扣减过库存' }
+    }
+
+    const results = {
+      deducted: [],
+      notFound: [],
+      insufficient: []
+    }
+
+    meal.ingredients.forEach(ing => {
+      const fridgeItem = fridgeStore.items.find(item =>
+        matchIngredientByCategory(item.name, ing.name)
+      )
+      
+      if (fridgeItem) {
+        if (fridgeItem.quantity >= ing.quantity) {
+          const newQty = Math.max(0, Number((fridgeItem.quantity - ing.quantity).toFixed(2)))
+          if (newQty === 0) {
+            fridgeStore.removeItem(fridgeItem.id)
+          } else {
+            fridgeStore.updateItem(fridgeItem.id, { quantity: newQty })
+          }
+          results.deducted.push({
+            name: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            remaining: newQty
+          })
+        } else {
+          results.insufficient.push({
+            name: ing.name,
+            needed: ing.quantity,
+            available: fridgeItem.quantity,
+            unit: ing.unit
+          })
+          if (fridgeItem.quantity > 0) {
+            fridgeStore.updateItem(fridgeItem.id, { quantity: 0 })
+          }
+        }
+      } else {
+        results.notFound.push({
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit
+        })
+      }
+    })
+
+    meal.cooked = true
+    meal.cookedAt = new Date().toISOString()
+    meal.ingredientsDeducted = true
+
+    return {
+      success: true,
+      meal,
+      mealDate,
+      mealTime,
+      ...results
     }
   }
 
@@ -143,6 +244,16 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
     return count
   })
 
+  const weekCookedMeals = computed(() => {
+    let count = 0
+    weekDates.value.forEach(date => {
+      MEAL_TIMES.forEach(time => {
+        count += getMeals(date, time).filter(m => m.cooked).length
+      })
+    })
+    return count
+  })
+
   const weekAllRecipes = computed(() => {
     const recipes = []
     weekDates.value.forEach(date => {
@@ -162,13 +273,24 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
   })
 
   const weekTotalIngredients = computed(() => {
-    return getTotalIngredients(weekAllRecipes.value)
+    const uncookedRecipes = []
+    weekDates.value.forEach(date => {
+      MEAL_TIMES.forEach(time => {
+        const meals = getMeals(date, time).filter(m => !m.cooked || !m.ingredientsDeducted)
+        meals.forEach(meal => {
+          uncookedRecipes.push({
+            ingredients: meal.ingredients
+          })
+        })
+      })
+    })
+    return getTotalIngredients(uncookedRecipes)
   })
 
   function autoGenerateWeekPlan(fridgeItems) {
     clearWeek()
     const allRecipes = getAllRecipes()
-    const suggestedRecipes = getRecipeSuggestions(fridgeItems, 14)
+    const suggestedRecipes = getRecipeSuggestions(fridgeItems, 21)
     
     const usedNames = new Set()
     const priorityRecipes = suggestedRecipes.filter(r => {
@@ -181,15 +303,20 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
     const shuffledRemaining = [...remaining].sort(() => Math.random() - 0.5)
     const finalPool = [...priorityRecipes, ...shuffledRemaining]
     
-    const dinnerRecipes = finalPool.slice(0, 7)
-    const lunchRecipes = finalPool.slice(7, 14).reverse()
+    const breakfastRecipes = finalPool.filter(r => r.tags?.includes('早餐') || r.category === '早餐')
+    const mainRecipes = finalPool.filter(r => !r.tags?.includes('早餐') && r.category !== '早餐')
     
     weekDates.value.forEach((date, index) => {
-      if (dinnerRecipes[index]) {
-        addMeal(date, '晚餐', dinnerRecipes[index])
+      if (breakfastRecipes[index % breakfastRecipes.length]) {
+        addMeal(date, '早餐', breakfastRecipes[index % breakfastRecipes.length])
+      } else if (finalPool[index]) {
+        addMeal(date, '早餐', finalPool[index])
       }
-      if (lunchRecipes[index]) {
-        addMeal(date, '午餐', lunchRecipes[index])
+      if (mainRecipes[index]) {
+        addMeal(date, '午餐', mainRecipes[index])
+      }
+      if (mainRecipes[(index + 3) % mainRecipes.length]) {
+        addMeal(date, '晚餐', mainRecipes[(index + 3) % mainRecipes.length])
       }
     })
   }
@@ -210,11 +337,15 @@ export const useMealPlanStore = defineStore('mealPlan', () => {
     mealTimes,
     weekMeals,
     weekTotalMeals,
+    weekCookedMeals,
     weekAllRecipes,
     weekTotalIngredients,
     getMeals,
     addMeal,
     removeMeal,
+    toggleMealCooked,
+    getMealById,
+    deductMealFromFridge,
     clearDay,
     clearWeek,
     previousWeek,

@@ -1,8 +1,8 @@
 <template>
   <div class="meal-plan">
     <header class="header">
-      <h1>📅 周餐计划</h1>
-      <p class="subtitle">规划一周饮食，联动购物清单与库存管理</p>
+      <h1>📅 周膳食日历</h1>
+      <p class="subtitle">规划一周饮食，智能推荐菜谱，做完自动扣减库存</p>
     </header>
 
     <div class="main-content">
@@ -26,8 +26,11 @@
           <span class="summary-item">
             🍽 本周共 <strong>{{ mealPlanStore.weekTotalMeals }}</strong> 道菜
           </span>
+          <span class="summary-item cooked">
+            ✅ 已完成 <strong>{{ mealPlanStore.weekCookedMeals }}</strong> 道
+          </span>
           <span class="summary-item">
-            🥬 需 <strong>{{ mealPlanStore.weekTotalIngredients.length }}</strong> 种食材
+            🥬 待采购 <strong>{{ mealPlanStore.weekTotalIngredients.length }}</strong> 种
           </span>
         </div>
 
@@ -65,15 +68,41 @@
                 v-for="meal in mealPlanStore.getMeals(day.date, mealTime)"
                 :key="meal.id"
                 class="meal-item"
-                @click.stop="showMealDetail(meal)"
+                :class="{ 
+                  cooked: meal.cooked, 
+                  deducted: meal.ingredientsDeducted 
+                }"
+                @click.stop="showMealDetail(meal, day.date, mealTime)"
               >
-                <span class="meal-name">{{ meal.recipeName }}</span>
-                <button
-                  class="remove-meal-btn"
-                  @click.stop="removeMeal(day.date, mealTime, meal.id)"
-                >
-                  ✕
-                </button>
+                <div class="meal-item-header">
+                  <span class="meal-status-icon">
+                    {{ meal.ingredientsDeducted ? '✅' : (meal.cooked ? '👨‍🍳' : '') }}
+                  </span>
+                  <span class="meal-name">{{ meal.recipeName }}</span>
+                </div>
+                <div class="meal-item-actions">
+                  <button
+                    v-if="!meal.ingredientsDeducted"
+                    class="action-btn cook-btn"
+                    :title="meal.cooked ? '已标记已做' : '标记已做并扣减库存'"
+                    @click.stop="confirmCook(day.date, mealTime, meal)"
+                  >
+                    🍳 完成
+                  </button>
+                  <button
+                    v-else
+                    class="action-btn cooked-btn"
+                    disabled
+                  >
+                    ✓ 已扣减
+                  </button>
+                  <button
+                    class="remove-meal-btn"
+                    @click.stop="removeMeal(day.date, mealTime, meal.id)"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
               <div class="add-meal-hint">
                 <span class="plus-icon">+</span>
@@ -95,7 +124,7 @@
 
       <div class="side-section">
         <div class="card ingredients-summary">
-          <h2>🥗 本周食材汇总</h2>
+          <h2>🥗 待采购食材</h2>
           <div v-if="mealPlanStore.weekTotalIngredients.length === 0" class="empty-tip">
             添加菜谱后显示所需食材
           </div>
@@ -126,20 +155,15 @@
         </div>
 
         <div class="card">
-          <h2>📦 库存扣减</h2>
+          <h2>📋 扣减说明</h2>
           <p class="tip-text">
-            完成本周计划后，可一键从冰箱库存中扣除已使用的食材。
+            点击菜品上的"🍳 完成"按钮后：
           </p>
-          <button
-            v-if="mealPlanStore.weekTotalIngredients.length > 0"
-            class="btn btn-warning full-width"
-            @click="deductFromFridge"
-          >
-            ➖ 从库存扣减
-          </button>
-          <div v-else class="empty-tip">
-            暂无计划，无法扣减
-          </div>
+          <ul class="tip-list">
+            <li>自动从冰箱扣减该菜谱所需食材</li>
+            <li>库存不足时会有提示，剩余量清零</li>
+            <li>未找到的食材将在结果中提示</li>
+          </ul>
         </div>
 
         <div class="card recipe-suggestions">
@@ -161,6 +185,7 @@
                   <span v-if="recipe.expiringMatchCount > 0" class="badge-expiring-priority">
                     ⚡ 优先
                   </span>
+                  <span class="recipe-category">{{ recipe.category }}</span>
                 </div>
                 <div class="recipe-meta">
                   <span class="recipe-match" v-if="recipe.matchCount">
@@ -199,21 +224,33 @@
     </div>
 
     <div v-if="showAddModal" class="modal-overlay" @click="closeAddMeal">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content large" @click.stop>
         <div class="modal-header">
           <h3>添加菜谱 - {{ currentAddDate }} {{ currentAddMealTime }}</h3>
           <button class="close-btn" @click="closeAddMeal">✕</button>
         </div>
         <div class="modal-body">
+          <div class="filter-tabs">
+            <button
+              v-for="cat in recipeCategories"
+              :key="cat"
+              class="filter-tab"
+              :class="{ active: currentCategory === cat }"
+              @click="currentCategory = cat"
+            >
+              {{ cat }}
+            </button>
+          </div>
           <div class="recipe-select-list">
             <div
-              v-for="recipe in allRecipes"
+              v-for="recipe in filteredRecipes"
               :key="recipe.name"
               class="recipe-select-item"
               @click="addRecipeToPlan(recipe)"
             >
               <div class="recipe-select-info">
                 <span class="recipe-select-name">{{ recipe.name }}</span>
+                <span class="recipe-select-category">{{ recipe.category }}</span>
                 <span class="recipe-select-desc">{{ recipe.description }}</span>
               </div>
               <div class="recipe-select-ingredients">
@@ -236,27 +273,102 @@
     <div v-if="showDetailModal" class="modal-overlay" @click="closeDetail">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>{{ currentDetailMeal?.recipeName }}</h3>
+          <h3>
+            <span v-if="currentDetailMeal?.ingredientsDeducted">✅ </span>
+            <span v-else-if="currentDetailMeal?.cooked">👨‍🍳 </span>
+            {{ currentDetailMeal?.recipeName }}
+          </h3>
           <button class="close-btn" @click="closeDetail">✕</button>
         </div>
         <div class="modal-body">
+          <div class="detail-status-bar" v-if="currentDetailMeal?.ingredientsDeducted">
+            <span class="status-tag success">已完成 · 库存已扣减</span>
+            <span class="status-time">{{ formatCookedTime(currentDetailMeal?.cookedAt) }}</span>
+          </div>
+          <div class="detail-status-bar" v-else-if="currentDetailMeal?.cooked">
+            <span class="status-tag warning">已标记完成</span>
+            <span class="status-time">{{ formatCookedTime(currentDetailMeal?.cookedAt) }}</span>
+          </div>
+
           <p class="recipe-desc">{{ currentDetailMeal?.description }}</p>
+          
           <h4>所需食材</h4>
           <div class="recipe-ingredients">
             <span
               v-for="ing in currentDetailMeal?.ingredients"
               :key="ing.name"
               class="ingredient-tag"
+              :class="{ available: hasIngredient(ing.name) }"
             >
               {{ ing.name }} {{ ing.quantity }}{{ ing.unit }}
             </span>
           </div>
+          
           <h4>做法步骤</h4>
           <ol class="steps-list">
             <li v-for="(step, i) in currentDetailMeal?.steps" :key="i">
               {{ step }}
             </li>
           </ol>
+
+          <div class="detail-actions" v-if="currentDetailMeal && !currentDetailMeal.ingredientsDeducted">
+            <button class="btn btn-primary full-width" @click="confirmCookFromDetail">
+              🍳 确认做完并扣减库存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showResultModal" class="modal-overlay" @click="closeResultModal">
+      <div class="modal-content result-modal" @click.stop>
+        <div class="modal-header">
+          <h3>🍳 扣减结果</h3>
+          <button class="close-btn" @click="closeResultModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="lastDeductResult" class="result-content">
+            <div class="result-summary">
+              <span class="recipe-name">{{ lastDeductResult.meal?.recipeName }}</span>
+            </div>
+            
+            <div v-if="lastDeductResult.deducted.length > 0" class="result-section">
+              <h4 class="result-title success">✅ 已成功扣减 ({{ lastDeductResult.deducted.length }})</h4>
+              <div class="result-list">
+                <div v-for="item in lastDeductResult.deducted" :key="item.name" class="result-item success">
+                  <span class="result-name">{{ item.name }}</span>
+                  <span class="result-qty">
+                    -{{ item.quantity }}{{ item.unit }}，剩余 {{ item.remaining }}{{ item.unit }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="lastDeductResult.insufficient.length > 0" class="result-section">
+              <h4 class="result-title warning">⚠️ 库存不足 ({{ lastDeductResult.insufficient.length }})</h4>
+              <div class="result-list">
+                <div v-for="item in lastDeductResult.insufficient" :key="item.name" class="result-item warning">
+                  <span class="result-name">{{ item.name }}</span>
+                  <span class="result-qty">
+                    需{{ item.needed }}{{ item.unit }}，只有{{ item.available }}{{ item.unit }}（已清零）
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="lastDeductResult.notFound.length > 0" class="result-section">
+              <h4 class="result-title danger">❌ 冰箱中未找到 ({{ lastDeductResult.notFound.length }})</h4>
+              <div class="result-list">
+                <div v-for="item in lastDeductResult.notFound" :key="item.name" class="result-item danger">
+                  <span class="result-name">{{ item.name }}</span>
+                  <span class="result-qty">需 {{ item.quantity }}{{ item.unit }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary full-width" @click="closeResultModal">
+            知道了
+          </button>
         </div>
       </div>
     </div>
@@ -276,11 +388,40 @@ const shoppingStore = useShoppingListStore()
 
 const showAddModal = ref(false)
 const showDetailModal = ref(false)
+const showResultModal = ref(false)
 const currentAddDate = ref('')
 const currentAddMealTime = ref('')
 const currentDetailMeal = ref(null)
+const currentDetailDate = ref('')
+const currentDetailMealTime = ref('')
+const lastDeductResult = ref(null)
+const currentCategory = ref('全部')
 
 const allRecipes = getAllRecipes()
+
+const recipeCategories = computed(() => {
+  const cats = ['全部']
+  allRecipes.forEach(r => {
+    if (r.category && !cats.includes(r.category)) {
+      cats.push(r.category)
+    }
+  })
+  return cats
+})
+
+const filteredRecipes = computed(() => {
+  if (currentCategory.value === '全部') {
+    return allRecipes
+  }
+  const filtered = allRecipes.filter(r => r.category === currentCategory.value)
+  if (currentAddMealTime.value) {
+    const mealTimeRecipes = allRecipes.filter(r => 
+      r.tags?.includes(currentAddMealTime.value) && r.category === currentCategory.value
+    )
+    if (mealTimeRecipes.length > 0) return mealTimeRecipes
+  }
+  return filtered
+})
 
 const suggestions = computed(() => {
   return getRecipeSuggestions(fridgeStore.items, 4)
@@ -297,6 +438,12 @@ const weekRangeText = computed(() => {
 function formatShortDate(dateStr) {
   const date = new Date(dateStr)
   return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function formatCookedTime(timeStr) {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
 }
 
 function getMealIcon(mealTime) {
@@ -331,6 +478,7 @@ function hasInFridge(ingredientName) {
 function openAddMeal(date, mealTime) {
   currentAddDate.value = date
   currentAddMealTime.value = mealTime
+  currentCategory.value = mealTime === '早餐' ? '早餐' : '全部'
   showAddModal.value = true
 }
 
@@ -349,8 +497,10 @@ function removeMeal(date, mealTime, mealId) {
   }
 }
 
-function showMealDetail(meal) {
+function showMealDetail(meal, date, mealTime) {
   currentDetailMeal.value = meal
+  currentDetailDate.value = date
+  currentDetailMealTime.value = mealTime
   showDetailModal.value = true
 }
 
@@ -361,8 +511,34 @@ function closeDetail() {
 
 function showRecipeAddModal(recipe) {
   currentAddDate.value = mealPlanStore.weekDays.find(d => d.isToday)?.date || mealPlanStore.weekDates[0]
-  currentAddMealTime.value = '晚餐'
+  currentAddMealTime.value = recipe.tags?.includes('早餐') ? '早餐' : '晚餐'
   mealPlanStore.addMeal(currentAddDate.value, currentAddMealTime.value, recipe)
+}
+
+function confirmCook(date, mealTime, meal) {
+  if (meal.ingredientsDeducted) {
+    alert('该菜品已扣减过库存')
+    return
+  }
+  
+  if (!confirm(`确认完成「${meal.recipeName}」？\n将自动从冰箱扣减所需食材。`)) {
+    return
+  }
+  
+  const result = mealPlanStore.deductMealFromFridge(meal.id, fridgeStore)
+  lastDeductResult.value = result
+  showResultModal.value = true
+  showDetailModal.value = false
+}
+
+function confirmCookFromDetail() {
+  if (!currentDetailMeal.value) return
+  confirmCook(currentDetailDate.value, currentDetailMealTime.value, currentDetailMeal.value)
+}
+
+function closeResultModal() {
+  showResultModal.value = false
+  lastDeductResult.value = null
 }
 
 function autoGenerate() {
@@ -400,41 +576,6 @@ function generateShoppingList() {
     alert('所有食材都已有库存，无需采购！')
   }
 }
-
-function deductFromFridge() {
-  if (!confirm('确定要从冰箱库存中扣减本周计划所需的食材吗？')) {
-    return
-  }
-  
-  const ingredients = mealPlanStore.weekTotalIngredients
-  let deductedCount = 0
-  let notFoundItems = []
-  
-  ingredients.forEach(ing => {
-    const fridgeItem = fridgeStore.items.find(item =>
-      item.name.toLowerCase().includes(ing.name.toLowerCase()) ||
-      ing.name.toLowerCase().includes(item.name.toLowerCase())
-    )
-    
-    if (fridgeItem) {
-      const newQty = Math.max(0, fridgeItem.quantity - ing.quantity)
-      if (newQty === 0) {
-        fridgeStore.removeItem(fridgeItem.id)
-      } else {
-        fridgeStore.updateItem(fridgeItem.id, { quantity: newQty })
-      }
-      deductedCount++
-    } else {
-      notFoundItems.push(ing.name)
-    }
-  })
-  
-  let message = `已扣减 ${deductedCount} 种食材。`
-  if (notFoundItems.length > 0) {
-    message += `\n以下食材未找到：${notFoundItems.join('、')}`
-  }
-  alert(message)
-}
 </script>
 
 <style scoped>
@@ -462,9 +603,9 @@ function deductFromFridge() {
 
 .main-content {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 340px;
   gap: 20px;
-  max-width: 1400px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
@@ -541,6 +682,7 @@ function deductFromFridge() {
   padding: 12px 16px;
   background: #f3e5f5;
   border-radius: 8px;
+  flex-wrap: wrap;
 }
 
 .summary-item {
@@ -553,6 +695,10 @@ function deductFromFridge() {
   font-size: 16px;
 }
 
+.summary-item.cooked strong {
+  color: #2e7d32;
+}
+
 .meal-grid {
   border: 1px solid #e1bee7;
   border-radius: 8px;
@@ -561,13 +707,13 @@ function deductFromFridge() {
 
 .grid-header {
   display: grid;
-  grid-template-columns: 80px repeat(7, 1fr);
+  grid-template-columns: 90px repeat(7, 1fr);
   background: #f3e5f5;
 }
 
 .grid-row {
   display: grid;
-  grid-template-columns: 80px repeat(7, 1fr);
+  grid-template-columns: 90px repeat(7, 1fr);
   border-top: 1px solid #e1bee7;
 }
 
@@ -618,7 +764,7 @@ function deductFromFridge() {
 }
 
 .meal-cell {
-  min-height: 80px;
+  min-height: 110px;
   cursor: pointer;
   transition: background 0.2s;
   display: flex;
@@ -632,39 +778,104 @@ function deductFromFridge() {
 
 .meal-item {
   position: relative;
-  padding: 6px 8px;
+  padding: 8px;
   background: #f3e5f5;
   border-radius: 6px;
   font-size: 12px;
   color: #4a148c;
   text-align: left;
   transition: all 0.2s;
+  border: 2px solid transparent;
 }
 
 .meal-item:hover {
   background: #e1bee7;
 }
 
+.meal-item.cooked {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+}
+
+.meal-item.cooked:hover {
+  background: #c8e6c9;
+}
+
+.meal-item.deducted {
+  background: #e8f5e9;
+  border-color: #66bb6a;
+  opacity: 0.85;
+}
+
+.meal-item.deducted .meal-name {
+  text-decoration: line-through;
+  color: #388e3c;
+}
+
+.meal-item-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.meal-status-icon {
+  font-size: 14px;
+}
+
 .meal-name {
   display: block;
   font-weight: 500;
+  flex: 1;
+}
+
+.meal-item-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.cook-btn {
+  background: linear-gradient(135deg, #66bb6a, #4caf50);
+  color: white;
+}
+
+.cook-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+}
+
+.cooked-btn {
+  background: #c8e6c9;
+  color: #2e7d32;
+  cursor: not-allowed;
 }
 
 .remove-meal-btn {
-  position: absolute;
-  top: 2px;
-  right: 4px;
   background: none;
   border: none;
   color: #ab47bc;
   cursor: pointer;
-  font-size: 10px;
-  opacity: 0;
+  font-size: 12px;
+  opacity: 0.7;
   transition: opacity 0.2s;
+  padding: 2px 4px;
 }
 
-.meal-item:hover .remove-meal-btn {
+.remove-meal-btn:hover {
   opacity: 1;
+  color: #c62828;
 }
 
 .add-meal-hint {
@@ -676,6 +887,12 @@ function deductFromFridge() {
   font-size: 11px;
   margin-top: auto;
   padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.meal-cell:hover .add-meal-hint {
+  opacity: 1;
 }
 
 .plus-icon {
@@ -809,8 +1026,16 @@ function deductFromFridge() {
 .tip-text {
   font-size: 13px;
   color: #78909c;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   line-height: 1.5;
+}
+
+.tip-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #546e7a;
+  font-size: 12px;
+  line-height: 1.8;
 }
 
 .empty-tip {
@@ -860,6 +1085,15 @@ function deductFromFridge() {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipe-category {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #e1bee7;
+  color: #6a1b9a;
+  border-radius: 8px;
 }
 
 .recipe-meta {
@@ -972,10 +1206,14 @@ function deductFromFridge() {
   background: white;
   border-radius: 12px;
   width: 90%;
-  max-width: 500px;
-  max-height: 80vh;
+  max-width: 520px;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
+}
+
+.modal-content.large {
+  max-width: 700px;
 }
 
 .modal-header {
@@ -1008,6 +1246,34 @@ function deductFromFridge() {
   padding: 16px 20px;
   overflow-y: auto;
   flex: 1;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  padding: 6px 14px;
+  border: 1px solid #e1bee7;
+  background: white;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #7b1fa2;
+  transition: all 0.2s;
+}
+
+.filter-tab:hover {
+  background: #f3e5f5;
+}
+
+.filter-tab.active {
+  background: #8e24aa;
+  color: white;
+  border-color: #8e24aa;
 }
 
 .recipe-select-list {
@@ -1045,6 +1311,16 @@ function deductFromFridge() {
   font-size: 15px;
 }
 
+.recipe-select-category {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  background: #e1bee7;
+  color: #6a1b9a;
+  border-radius: 8px;
+  margin-left: 6px;
+}
+
 .recipe-select-desc {
   font-size: 12px;
   color: #78909c;
@@ -1061,6 +1337,37 @@ function deductFromFridge() {
   grid-column: 2;
   grid-row: 1;
   align-self: start;
+}
+
+.detail-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.status-tag {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.status-tag.success {
+  background: #c8e6c9;
+  color: #2e7d32;
+}
+
+.status-tag.warning {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.status-time {
+  font-size: 12px;
+  color: #78909c;
 }
 
 .steps-list {
@@ -1080,7 +1387,99 @@ function deductFromFridge() {
   font-size: 14px;
 }
 
-@media (max-width: 1100px) {
+.detail-actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #eee;
+}
+
+.result-modal {
+  max-width: 480px;
+}
+
+.result-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-summary {
+  padding: 12px 16px;
+  background: #f3e5f5;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.result-summary .recipe-name {
+  font-size: 17px;
+  color: #4a148c;
+  font-weight: 600;
+}
+
+.result-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-title {
+  margin: 0 !important;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.result-title.success {
+  color: #2e7d32;
+}
+
+.result-title.warning {
+  color: #e65100;
+}
+
+.result-title.danger {
+  color: #c62828;
+}
+
+.result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.result-item.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.result-item.warning {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.result-item.danger {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.result-name {
+  font-weight: 500;
+}
+
+.result-qty {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+@media (max-width: 1200px) {
   .main-content {
     grid-template-columns: 1fr;
   }
@@ -1091,7 +1490,7 @@ function deductFromFridge() {
   
   .grid-header,
   .grid-row {
-    min-width: 700px;
+    min-width: 800px;
   }
 }
 </style>

@@ -4,6 +4,8 @@ import { matchIngredientByCategory, getCategoryInfo } from '@/utils/categories'
 const recipes = [
   {
     name: '番茄炒蛋',
+    category: '家常菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '番茄', quantity: 2, unit: '个' },
       { name: '鸡蛋', quantity: 3, unit: '个' }
@@ -18,6 +20,8 @@ const recipes = [
   },
   {
     name: '青椒肉丝',
+    category: '家常菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '青椒', quantity: 2, unit: '个' },
       { name: '猪肉', quantity: 200, unit: '克' }
@@ -32,6 +36,8 @@ const recipes = [
   },
   {
     name: '土豆烧牛肉',
+    category: '硬菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '土豆', quantity: 2, unit: '个' },
       { name: '牛肉', quantity: 300, unit: '克' }
@@ -46,6 +52,8 @@ const recipes = [
   },
   {
     name: '蒜蓉西兰花',
+    category: '素菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '西兰花', quantity: 1, unit: '个' },
       { name: '大蒜', quantity: 3, unit: '瓣' }
@@ -60,6 +68,8 @@ const recipes = [
   },
   {
     name: '黄瓜拌木耳',
+    category: '凉菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '黄瓜', quantity: 1, unit: '根' },
       { name: '木耳', quantity: 50, unit: '克' }
@@ -74,6 +84,8 @@ const recipes = [
   },
   {
     name: '白菜豆腐汤',
+    category: '汤羹',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '白菜', quantity: 200, unit: '克' },
       { name: '豆腐', quantity: 1, unit: '盒' }
@@ -88,6 +100,8 @@ const recipes = [
   },
   {
     name: '胡萝卜炒肉片',
+    category: '家常菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '胡萝卜', quantity: 1, unit: '根' },
       { name: '猪肉', quantity: 150, unit: '克' }
@@ -102,6 +116,8 @@ const recipes = [
   },
   {
     name: '洋葱炒鸡蛋',
+    category: '家常菜',
+    tags: ['午餐', '晚餐'],
     ingredients: [
       { name: '洋葱', quantity: 1, unit: '个' },
       { name: '鸡蛋', quantity: 2, unit: '个' }
@@ -112,6 +128,169 @@ const recipes = [
       '热锅下油，炒鸡蛋盛出',
       '锅中炒洋葱至透明变软',
       '加入鸡蛋翻炒，加盐调味'
+    ]
+  },
+  {
+    name: '牛奶燕麦粥',
+    category: '早餐',
+    tags: ['早餐'],
+    ingredients: [
+      { name: '燕麦', quantity: 50, unit: '克' },
+      { name: '牛奶', quantity: 250, unit: '毫升' }
+    ],
+    description: '营养健康的经典早餐，简单快捷。',
+    steps: [
+      '将燕麦片放入碗中',
+      '加入牛奶搅拌均匀',
+      '微波炉加热2分钟或小火煮3分钟',
+      '可根据喜好加蜂蜜或水果'
+    ]
+  },
+  {
+    name: '水煮蛋配吐司',
+    category: '早餐',
+    tags: ['早餐'],
+    ingredients: [
+      { name: '鸡蛋', quantity: 2, unit: '个' },
+      { name: '面包', quantity: 2, unit: '片' }
+    ],
+    description: '简单经典的西式早餐组合。',
+    steps: [
+      '鸡蛋冷水下锅，水开后煮6-8分钟',
+      '捞出过冷水剥壳',
+      '面包片烤至金黄',
+      '搭配食用，可撒少许盐和黑胡椒'
+    ]
+  },
+  {
+    name: '豆浆油条',
+    category: '早餐',
+    tags: ['早餐'],
+    ingredients: [
+      { name: '黄豆', quantity: 50, unit: '克' },
+      { name: '油条', quantity: 2, unit: '根' }
+    ],
+    description: '传统中式早餐，豆浆香浓配酥脆油条。',
+    steps: [
+      '黄豆提前泡发4小时以上',
+      '用豆浆机打成豆浆并过滤',
+      '豆浆煮沸加糖调味',
+      '油条切段配热豆浆食用'
+    ]
+  },
+  {
+    name: '鸡蛋灌饼',
+    category: '早餐',
+    tags: ['早餐'],
+    ingredients: [
+      { name: '面粉', quantity: 100, unit: '克' },
+      { name: '鸡蛋', quantity: 1, unit: '个' }
+    ],
+    description: '外酥里嫩，鸡蛋香嫩的街头美食。',
+    steps: [
+      '面粉加水揉成软面团醒20分钟',
+      '擀成薄饼刷油折叠再擀开',
+      '平底锅烙至起泡，戳洞灌入蛋液',
+      '两面煎熟刷酱卷生菜即可'
+    ]
+  },
+  {
+    name: '皮蛋瘦肉粥',
+    category: '早餐',
+    tags: ['早餐', '午餐'],
+    ingredients: [
+      { name: '大米', quantity: 80, unit: '克' },
+      { name: '皮蛋', quantity: 1, unit: '个' },
+      { name: '猪肉', quantity: 80, unit: '克' }
+    ],
+    description: '广东经典早茶，粥绵密肉香嫩。',
+    steps: [
+      '大米洗净加水煮成白粥',
+      '猪肉切丝用料酒盐腌制',
+      '皮蛋切小块',
+      '粥煮开后加入肉丝和皮蛋，调味撒葱花'
+    ]
+  },
+  {
+    name: '西红柿鸡蛋面',
+    category: '主食',
+    tags: ['早餐', '午餐', '晚餐'],
+    ingredients: [
+      { name: '番茄', quantity: 1, unit: '个' },
+      { name: '鸡蛋', quantity: 2, unit: '个' },
+      { name: '面条', quantity: 100, unit: '克' }
+    ],
+    description: '家常汤面，酸甜开胃营养全面。',
+    steps: [
+      '番茄切块，鸡蛋打散',
+      '热锅炒鸡蛋盛出，炒番茄出汁',
+      '加水煮开，放入面条煮熟',
+      '加入鸡蛋，调味撒葱花'
+    ]
+  },
+  {
+    name: '葱花鸡蛋饼',
+    category: '早餐',
+    tags: ['早餐'],
+    ingredients: [
+      { name: '面粉', quantity: 80, unit: '克' },
+      { name: '鸡蛋', quantity: 2, unit: '个' },
+      { name: '葱', quantity: 2, unit: '根' }
+    ],
+    description: '松软香嫩，葱香四溢的快手早餐。',
+    steps: [
+      '面粉加水搅成无颗粒面糊',
+      '打入鸡蛋搅匀',
+      '加入葱花和少许盐',
+      '平底锅刷油倒入面糊，两面煎至金黄'
+    ]
+  },
+  {
+    name: '清炒时蔬',
+    category: '素菜',
+    tags: ['午餐', '晚餐'],
+    ingredients: [
+      { name: '青菜', quantity: 300, unit: '克' },
+      { name: '大蒜', quantity: 2, unit: '瓣' }
+    ],
+    description: '简单清爽，保留蔬菜原味。',
+    steps: [
+      '青菜洗净沥干，大蒜切末',
+      '热锅下油爆香蒜末',
+      '下青菜大火快炒',
+      '加盐调味出锅'
+    ]
+  },
+  {
+    name: '红烧茄子',
+    category: '家常菜',
+    tags: ['午餐', '晚餐'],
+    ingredients: [
+      { name: '茄子', quantity: 2, unit: '根' },
+      { name: '大蒜', quantity: 3, unit: '瓣' }
+    ],
+    description: '酱香浓郁，软糯入味的下饭神器。',
+    steps: [
+      '茄子切滚刀块撒盐腌10分钟',
+      '挤干水分裹少许淀粉',
+      '油炸至金黄捞出',
+      '爆香蒜末，加酱汁炒匀收汁'
+    ]
+  },
+  {
+    name: '小米南瓜粥',
+    category: '早餐',
+    tags: ['早餐', '晚餐'],
+    ingredients: [
+      { name: '小米', quantity: 60, unit: '克' },
+      { name: '南瓜', quantity: 200, unit: '克' }
+    ],
+    description: '养胃香甜，色泽金黄的健康粥品。',
+    steps: [
+      '南瓜去皮切块',
+      '小米洗净加水煮开',
+      '加入南瓜小火煮30分钟',
+      '搅拌至南瓜融于粥中即可'
     ]
   }
 ]
