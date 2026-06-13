@@ -532,7 +532,7 @@ const consumptionSuggestions = computed(() => {
     })
   }
 
-  if (expiring.length >= 2) {
+  if (expiring.length > 0) {
     const today = expiring.filter(item => leftoverStore.daysUntilExpiry(item.expiryDate) === 0)
     if (today.length > 0) {
       suggestions.push({
@@ -550,6 +550,19 @@ const consumptionSuggestions = computed(() => {
         title: '明日到期，请安排食用',
         description: '以下菜品明天到期，请尽快安排食用。',
         items: tomorrow
+      })
+    }
+
+    const otherExpiring = expiring.filter(item => {
+      const days = leftoverStore.daysUntilExpiry(item.expiryDate)
+      return days > 1
+    })
+    if (otherExpiring.length > 0 && today.length === 0 && tomorrow.length === 0) {
+      suggestions.push({
+        priority: 'normal',
+        title: '近期到期，请注意食用',
+        description: `以下菜品将在 ${leftoverStore.expiringDays} 天内到期，请合理安排食用。`,
+        items: otherExpiring
       })
     }
 

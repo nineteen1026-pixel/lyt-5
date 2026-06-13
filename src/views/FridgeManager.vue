@@ -1178,7 +1178,7 @@ function goToShoppingList() {
 
 function goToLeftoverItems() {
   if (switchView) {
-    switchView('leftover')
+    switchView('leftover', '#expiring')
   }
 }
 
