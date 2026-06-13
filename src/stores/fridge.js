@@ -171,28 +171,38 @@ export const useFridgeStore = defineStore('fridge', () => {
       result = result.filter(item => item.zone === fs.activeZone)
     }
 
-    if (fs.selectedParentCategories.length > 0) {
-      if (fs.categoryLogic === 'AND') {
-        result = result.filter(item => 
-          fs.selectedParentCategories.every(cat => item.parentCategoryId === cat)
-        )
-      } else {
-        result = result.filter(item => 
-          fs.selectedParentCategories.includes(item.parentCategoryId)
-        )
-      }
-    }
+    const hasParentCats = fs.selectedParentCategories.length > 0
+    const hasSubCats = fs.selectedSubCategories.length > 0
 
-    if (fs.selectedSubCategories.length > 0) {
-      if (fs.categoryLogic === 'AND') {
-        result = result.filter(item => 
-          fs.selectedSubCategories.every(cat => item.categoryId === cat)
-        )
-      } else {
-        result = result.filter(item => 
-          fs.selectedSubCategories.includes(item.categoryId)
-        )
+    if (hasParentCats || hasSubCats) {
+      const parentMatchIds = hasParentCats ? new Set(fs.selectedParentCategories) : null
+      const subMatchIds = hasSubCats ? new Set(fs.selectedSubCategories) : null
+
+      let parentCoveredSubIds = null
+      if (hasParentCats) {
+        parentCoveredSubIds = new Set()
+        categories.forEach(group => {
+          if (parentMatchIds.has(group.id)) {
+            group.children.forEach(sub => parentCoveredSubIds.add(sub.id))
+          }
+        })
       }
+
+      result = result.filter(item => {
+        const matchedByParent = parentMatchIds
+          ? (parentMatchIds.has(item.parentCategoryId) || parentCoveredSubIds.has(item.categoryId))
+          : false
+        const matchedBySub = subMatchIds
+          ? subMatchIds.has(item.categoryId)
+          : false
+
+        if (hasParentCats && hasSubCats) {
+          return fs.categoryLogic === 'AND'
+            ? matchedByParent && matchedBySub
+            : matchedByParent || matchedBySub
+        }
+        return matchedByParent || matchedBySub
+      })
     }
 
     if (fs.selectedNutritionTags.length > 0) {
@@ -584,6 +594,201 @@ export const useFridgeStore = defineStore('fridge', () => {
     }
   )
 
+  function runFilterRegressionTests() {
+    const testItems = [
+      { name: '菠菜', quantity: 1, unit: '斤', zone: '冷藏', expiryDate: addDaysISO(5),
+        categoryId: 'leafy-veg', categoryName: '叶菜类',
+        parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+        nutritionTags: ['high-fiber', 'high-vitamin', 'iron-rich', 'low-calorie'] },
+      { name: '胡萝卜', quantity: 2, unit: '斤', zone: '冷藏', expiryDate: addDaysISO(10),
+        categoryId: 'root-veg', categoryName: '根茎类',
+        parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+        nutritionTags: ['high-vitamin', 'high-fiber', 'low-calorie'] },
+      { name: '西红柿', quantity: 3, unit: '个', zone: '保鲜', expiryDate: addDaysISO(2),
+        categoryId: 'fruit-veg', categoryName: '茄果类',
+        parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+        nutritionTags: ['high-vitamin', 'low-calorie', 'high-fiber'] },
+      { name: '苹果', quantity: 5, unit: '个', zone: '冷藏', expiryDate: addDaysISO(14),
+        categoryId: 'fruit', categoryName: '水果类',
+        parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+        nutritionTags: ['high-fiber', 'high-vitamin', 'low-calorie'] },
+      { name: '猪里脊', quantity: 1, unit: '斤', zone: '冷冻', expiryDate: addDaysISO(30),
+        categoryId: 'pork', categoryName: '猪肉类',
+        parentCategoryId: 'meat', parentCategoryName: '肉禽蛋类',
+        nutritionTags: ['high-protein', 'low-fat', 'iron-rich'] },
+      { name: '鸡蛋', quantity: 10, unit: '个', zone: '冷藏', expiryDate: addDaysISO(20),
+        categoryId: 'egg', categoryName: '蛋类',
+        parentCategoryId: 'meat', parentCategoryName: '肉禽蛋类',
+        nutritionTags: ['high-protein', 'calcium-rich', 'iron-rich'] },
+      { name: '三文鱼', quantity: 1, unit: '斤', zone: '冷冻', expiryDate: addDaysISO(60),
+        categoryId: 'fish', categoryName: '鱼类',
+        parentCategoryId: 'seafood', parentCategoryName: '水产海鲜',
+        nutritionTags: ['high-protein', 'low-fat', 'omega3', 'high-vitamin'] },
+      { name: '虾仁', quantity: 0.5, unit: '斤', zone: '冷冻', expiryDate: addDaysISO(45),
+        categoryId: 'shrimp', categoryName: '虾蟹类',
+        parentCategoryId: 'seafood', parentCategoryName: '水产海鲜',
+        nutritionTags: ['high-protein', 'low-fat', 'calcium-rich'] },
+      { name: '豆腐', quantity: 1, unit: '盒', zone: '冷藏', expiryDate: addDaysISO(4),
+        categoryId: 'soy', categoryName: '豆制品',
+        parentCategoryId: 'soy-dairy', parentCategoryName: '豆奶制品',
+        nutritionTags: ['high-protein', 'low-fat', 'calcium-rich', 'iron-rich'] },
+      { name: '牛奶', quantity: 2, unit: '盒', zone: '冷藏', expiryDate: addDaysISO(7),
+        categoryId: 'dairy', categoryName: '奶制品',
+        parentCategoryId: 'soy-dairy', parentCategoryName: '豆奶制品',
+        nutritionTags: ['high-protein', 'calcium-rich'] },
+    ]
+
+    const backup = JSON.parse(JSON.stringify(items.value))
+    const backupFilter = JSON.parse(JSON.stringify(filterState.value))
+    items.value = []
+    clearAllFilters()
+
+    const results = []
+    function assert(name, actualNames, expectedNames) {
+      const a = [...actualNames].sort().join(',')
+      const e = [...expectedNames].sort().join(',')
+      const passed = a === e
+      results.push({
+        name,
+        passed,
+        expected: expectedNames,
+        actual: actualNames
+      })
+      return passed
+    }
+
+    function namesOf(list) {
+      return list.map(i => i.name)
+    }
+
+    try {
+      testItems.forEach(t => addItem(t))
+
+      // 1. 单父类筛选
+      filterState.value.selectedParentCategories = ['vegetable-fruit']
+      assert('S1: 单父类「蔬菜水果」',
+        namesOf(filteredItems.value),
+        ['菠菜', '胡萝卜', '西红柿', '苹果'])
+
+      // 2. 多父类OR（强制）- 验证多父类不再AND导致空集
+      clearCategoryFilters()
+      filterState.value.selectedParentCategories = ['vegetable-fruit', 'meat']
+      assert('S2: 多父类 OR（蔬菜水果 + 肉禽蛋类）',
+        namesOf(filteredItems.value),
+        ['菠菜', '胡萝卜', '西红柿', '苹果', '猪里脊', '鸡蛋'])
+
+      // 3. 单子类筛选
+      clearCategoryFilters()
+      filterState.value.selectedSubCategories = ['leafy-veg']
+      assert('S3: 单子类「叶菜类」',
+        namesOf(filteredItems.value),
+        ['菠菜'])
+
+      // 4. 多子类OR（强制）
+      clearCategoryFilters()
+      filterState.value.selectedSubCategories = ['leafy-veg', 'egg', 'fish']
+      assert('S4: 多子类 OR（叶菜类 + 蛋类 + 鱼类）',
+        namesOf(filteredItems.value),
+        ['菠菜', '鸡蛋', '三文鱼'])
+
+      // 5. 父类 + 子类 OR 并集
+      clearCategoryFilters()
+      filterState.value.selectedParentCategories = ['seafood']
+      filterState.value.selectedSubCategories = ['egg']
+      filterState.value.categoryLogic = 'OR'
+      assert('S5: 父类「水产」 OR 子类「蛋类」',
+        namesOf(filteredItems.value),
+        ['三文鱼', '虾仁', '鸡蛋'])
+
+      // 6. 父类 + 子类 AND 交集（子类属于父类）
+      clearCategoryFilters()
+      filterState.value.selectedParentCategories = ['vegetable-fruit']
+      filterState.value.selectedSubCategories = ['leafy-veg', 'fruit']
+      filterState.value.categoryLogic = 'AND'
+      assert('S6: 父类「蔬菜」 AND 子类「叶菜,水果」（交集）',
+        namesOf(filteredItems.value),
+        ['菠菜', '苹果'])
+
+      // 7. 父类 + 非其子类 AND → 空集
+      clearCategoryFilters()
+      filterState.value.selectedParentCategories = ['meat']
+      filterState.value.selectedSubCategories = ['fruit']
+      filterState.value.categoryLogic = 'AND'
+      assert('S7: 父类「肉禽蛋」 AND 子类「水果」→ 空集',
+        namesOf(filteredItems.value),
+        [])
+
+      // 8. 关键词筛选（名称匹配）
+      clearAllFilters()
+      filterState.value.searchKeyword = '胡'
+      assert('S8: 关键词「胡」匹配胡萝卜',
+        namesOf(filteredItems.value),
+        ['胡萝卜'])
+
+      // 9. 关键词 + 父类组合联用
+      clearAllFilters()
+      filterState.value.searchKeyword = '肉'
+      filterState.value.selectedParentCategories = ['seafood']
+      assert('S9: 关键词「肉」+ 父类「水产」(三文鱼/虾仁含肉？测试虾仁与三文名称含？实际：三文鱼/虾仁 → 关键词"肉"不匹配，但"猪里脊"含肉但不属于水产 → 空集或三文鱼虾仁的检查：实际"三文鱼"不含"肉"，"虾仁"不含"肉"，"猪里脊"含但不在水产类 → 应为空)',
+        namesOf(filteredItems.value),
+        [])
+      // 再验证正确命中：关键词 + 父类可命中
+      filterState.value.searchKeyword = '三'
+      assert('S9b: 关键词「三」+ 父类「水产」 → 三文鱼',
+        namesOf(filteredItems.value),
+        ['三文鱼'])
+
+      // 10. 多父类 OR + 营养标签 OR
+      clearAllFilters()
+      filterState.value.selectedParentCategories = ['meat', 'soy-dairy']
+      filterState.value.selectedNutritionTags = ['calcium-rich']
+      filterState.value.tagLogic = 'OR'
+      assert('S10: 父类(肉+豆奶) OR 标签(补钙) → 命中钙-rich或在这两类中的：猪里脊(肉)、鸡蛋(肉+钙)、三文鱼？no(海鲜不在meat豆奶)、虾仁(海鲜不在)、豆腐(豆奶+钙)、牛奶(豆奶+钙)、菠菜(钙但不在肉豆奶) → 猪里脊、鸡蛋、豆腐、牛奶、菠菜(有钙)',
+        namesOf(filteredItems.value),
+        ['猪里脊', '鸡蛋', '豆腐', '牛奶', '菠菜'])
+
+      // 11. 父类 + 营养标签 AND（同时满足）
+      clearAllFilters()
+      filterState.value.selectedParentCategories = ['vegetable-fruit']
+      filterState.value.selectedNutritionTags = ['iron-rich']
+      filterState.value.tagLogic = 'AND'
+      assert('S11: 父类「蔬菜」AND 标签「补铁」→ 菠菜(蔬菜+铁)',
+        namesOf(filteredItems.value),
+        ['菠菜'])
+
+      // 12. 关键词 + 分类 + 标签 三重联用
+      clearAllFilters()
+      filterState.value.searchKeyword = '豆'
+      filterState.value.selectedParentCategories = ['soy-dairy']
+      filterState.value.selectedNutritionTags = ['high-protein']
+      filterState.value.tagLogic = 'AND'
+      assert('S12: 关键词「豆」+ 父类「豆奶」 + 标签「高蛋白」 AND → 豆腐(豆奶+高蛋白+豆)、牛奶(豆奶+高蛋白+无豆→不) → 豆腐',
+        namesOf(filteredItems.value),
+        ['豆腐'])
+
+    } finally {
+      items.value = backup
+      filterState.value = backupFilter
+    }
+
+    const passedCount = results.filter(r => r.passed).length
+    const failed = results.filter(r => !r.passed)
+    return {
+      total: results.length,
+      passed: passedCount,
+      failed: failed.length,
+      allPassed: failed.length === 0,
+      cases: results,
+      summary: `筛选回归测试：${passedCount}/${results.length} 通过${failed.length > 0 ? '，失败：' + failed.map(f => f.name).join('、') : ''}`
+    }
+  }
+
+  function addDaysISO(days) {
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    return d.toISOString().split('T')[0]
+  }
+
   return {
     items,
     zones,
@@ -635,6 +840,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     batchUpdateZone,
     batchExtendExpiry,
     replaceAllItems,
-    addItemsBulk
+    addItemsBulk,
+    runFilterRegressionTests
   }
 })

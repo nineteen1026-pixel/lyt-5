@@ -614,13 +614,22 @@
                 已选 {{ fridgeStore.activeFilterCount }} 个条件
               </div>
             </div>
-            <button 
-              v-if="fridgeStore.activeFilterCount > 0" 
-              class="btn btn-small btn-clear-all"
-              @click="fridgeStore.clearAllFilters"
-            >
-              🗑 清空筛选
-            </button>
+            <div class="filter-header-actions">
+              <button 
+                class="btn btn-small btn-regression"
+                @click="handleRunRegressionTests"
+                title="运行筛选回归测试"
+              >
+                🧪 验证筛选
+              </button>
+              <button 
+                v-if="fridgeStore.activeFilterCount > 0" 
+                class="btn btn-small btn-clear-all"
+                @click="fridgeStore.clearAllFilters"
+              >
+                🗑 清空筛选
+              </button>
+            </div>
           </div>
 
           <div class="search-bar">
@@ -672,11 +681,11 @@
                 已选 {{ fridgeStore.filterState.selectedParentCategories.length + fridgeStore.filterState.selectedSubCategories.length }} 个
               </div>
               <div class="filter-logic-switch">
-                <span class="logic-label">匹配</span>
+                <span class="logic-label">大类+子类</span>
                 <select 
                   v-model="fridgeStore.filterState.categoryLogic" class="logic-select">
-                  <option value="OR">任一 (OR)</option>
-                  <option value="AND">全部 (AND)</option>
+                  <option value="OR">并集 (OR)</option>
+                  <option value="AND">交集 (AND)</option>
                 </select>
               </div>
               <button 
@@ -686,6 +695,10 @@
               >清除</button>
             </div>
             <div v-show="expandedFilterPanels.category" class="filter-panel-body">
+              <div class="filter-hint-tip">
+                💡 多选同层级为「或」关系（一个食材只能归属一个大类/一个子类），<br>
+                「并集」表示命中大类范围 或 子类范围；「交集」表示同时在两类范围中。
+              </div>
               <div class="filter-sub-label">大类</div>
               <div class="category-grid parent-cat-grid">
                 <button
@@ -1311,6 +1324,61 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showRegressionDialog" class="regression-dialog-overlay" @click.self="closeRegressionDialog">
+      <div class="regression-dialog" :class="regressionResult?.allPassed ? 'all-passed' : 'has-failed'">
+        <div class="regression-dialog-header">
+          <h3>🧪 筛选逻辑回归测试报告</h3>
+          <button class="regression-dialog-close" @click="closeRegressionDialog">✕</button>
+        </div>
+        <div class="regression-dialog-body" v-if="regressionResult">
+          <div class="regression-summary" :class="regressionResult.allPassed ? 'success' : 'fail'">
+            <div class="regression-summary-icon">
+              {{ regressionResult.allPassed ? '✅' : '⚠️' }}
+            </div>
+            <div class="regression-summary-text">
+              <div class="regression-summary-title">
+                {{ regressionResult.allPassed ? '全部通过！' : '存在失败用例' }}
+              </div>
+              <div class="regression-summary-stats">
+                <span class="stat pass">通过 {{ regressionResult.passed }}/{{ regressionResult.total }}</span>
+                <span v-if="regressionResult.failed > 0" class="stat fail">失败 {{ regressionResult.failed }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="regression-cases-title">详细用例</div>
+          <div class="regression-cases-list">
+            <div 
+              v-for="(c, idx) in regressionResult.cases" 
+              :key="idx" 
+              class="regression-case"
+              :class="c.passed ? 'case-pass' : 'case-fail'"
+            >
+              <div class="case-header">
+                <span class="case-status">{{ c.passed ? '✅' : '❌' }}</span>
+                <span class="case-name">{{ c.name }}</span>
+              </div>
+              <div v-if="!c.passed" class="case-detail">
+                <div class="case-row">
+                  <span class="case-row-label">期望：</span>
+                  <span class="case-value">{{ c.expected.length > 0 ? c.expected.join('、') : '空集' }}</span>
+                </div>
+                <div class="case-row">
+                  <span class="case-row-label">实际：</span>
+                  <span class="case-value">{{ c.actual.length > 0 ? c.actual.join('、') : '空集' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="regression-dialog-footer">
+          <button class="btn btn-primary" @click="closeRegressionDialog">
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1917,6 +1985,26 @@ function onSearchInput() {
       }
     }
   }, 300)
+}
+
+const showRegressionDialog = ref(false)
+const regressionResult = ref(null)
+
+function handleRunRegressionTests() {
+  try {
+    const result = fridgeStore.runFilterRegressionTests()
+    regressionResult.value = result
+    showRegressionDialog.value = true
+    console.log('[筛选回归测试]', result.summary, result.cases)
+  } catch (err) {
+    console.error('[筛选回归测试] 执行出错：', err)
+    alert('筛选回归测试执行出错：' + err.message)
+  }
+}
+
+function closeRegressionDialog() {
+  showRegressionDialog.value = false
+  regressionResult.value = null
 }
 
 function addToShoppingList(item) {
@@ -4378,6 +4466,24 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
   background: #ffcdd2;
 }
 
+.filter-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-regression {
+  background: linear-gradient(135deg, #ede7f6, #e1bee7);
+  color: #6a1b9a;
+  font-weight: 500;
+  border: 1px solid #ce93d8;
+}
+
+.btn-regression:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(106, 27, 154, 0.2);
+}
+
 .search-bar {
   margin-bottom: 16px;
 }
@@ -4539,6 +4645,17 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 .filter-panel-body {
   padding: 14px;
   border-top: 1px solid #eef0f1;
+}
+
+.filter-hint-tip {
+  padding: 10px 12px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #795548;
+  line-height: 1.6;
+  margin-bottom: 12px;
 }
 
 .filter-sub-label {
@@ -4750,5 +4867,221 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 .items-filtered-hint {
   font-size: 12px;
   color: #90a4ae;
+}
+
+.regression-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.regression-dialog {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.regression-dialog.all-passed {
+  border: 2px solid #66bb6a;
+}
+
+.regression-dialog.has-failed {
+  border: 2px solid #ef5350;
+}
+
+.regression-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eceff1;
+  background: #fafafa;
+}
+
+.regression-dialog-header h3 {
+  margin: 0;
+  font-size: 17px;
+  color: #37474f;
+}
+
+.regression-dialog-close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  color: #90a4ae;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.regression-dialog-close:hover {
+  background: #e0e0e0;
+  color: #455a64;
+}
+
+.regression-dialog-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.regression-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.regression-summary.success {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  border: 1px solid #a5d6a7;
+}
+
+.regression-summary.fail {
+  background: linear-gradient(135deg, #ffebee, #ffcdd2);
+  border: 1px solid #ef9a9a;
+}
+
+.regression-summary-icon {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+
+.regression-summary-text {
+  flex: 1;
+}
+
+.regression-summary-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #2e7d32;
+}
+
+.regression-summary.fail .regression-summary-title {
+  color: #c62828;
+}
+
+.regression-summary-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.regression-summary-stats .stat.pass {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.regression-summary-stats .stat.fail {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.regression-cases-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #455a64;
+  margin-bottom: 10px;
+}
+
+.regression-cases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.regression-case {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.2s;
+}
+
+.regression-case.case-pass {
+  background: #f8faf9;
+  border-color: #c8e6c9;
+}
+
+.regression-case.case-fail {
+  background: #fff5f5;
+  border-color: #ef9a9a;
+}
+
+.case-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #37474f;
+}
+
+.case-status {
+  font-size: 14px;
+}
+
+.case-name {
+  flex: 1;
+}
+
+.case-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(239, 83, 80, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.case-row {
+  display: flex;
+  gap: 6px;
+}
+
+.case-row-label {
+  color: #607d8b;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.case-value {
+  color: #c62828;
+  font-weight: 500;
+}
+
+.regression-dialog-footer {
+  padding: 14px 20px;
+  border-top: 1px solid #eceff1;
+  background: #fafafa;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.regression-dialog-footer .btn {
+  min-width: 120px;
 }
 </style>
