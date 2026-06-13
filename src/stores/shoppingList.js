@@ -275,6 +275,7 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
       linkedFridgeItemId: null,
       originalQuantity: null,
       originalExpiryDate: null,
+      costRecordId: null,
       createdAt: new Date().toISOString()
     }
     list.value.push(newItem)
@@ -455,6 +456,7 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
           linkedFridgeItemId: itemData.linkedFridgeItemId || null,
           originalQuantity: itemData.originalQuantity || null,
           originalExpiryDate: itemData.originalExpiryDate || null,
+          costRecordId: itemData.costRecordId || null,
           createdAt: itemData.createdAt || new Date().toISOString()
         }
         list.value.push(newItem)
@@ -491,6 +493,7 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
           linkedFridgeItemId: null,
           originalQuantity: null,
           originalExpiryDate: null,
+          costRecordId: null,
           createdAt: itemData.createdAt || new Date().toISOString()
         }
         list.value.push(newItem)

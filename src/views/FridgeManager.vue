@@ -469,7 +469,7 @@
                       type="checkbox"
                       :checked="item.purchased"
                       class="shopping-checkbox"
-                      @change="item.purchased ? undoPurchased(item) : handlePurchased(item)"
+                      @change="handleShoppingToggle(item.id)"
                     />
                     <div class="shopping-item-main">
                       <div class="shopping-item-name-row">
@@ -1211,11 +1211,36 @@ const showImportPreview = ref(false)
 const importPreviewData = ref(null)
 const importMode = ref('merge')
 
-const costMonth = ref(purchaseCostStore.allCostMonths.length > 0 ? purchaseCostStore.allCostMonths[0] : '')
+const costMonth = ref(getCurrentCostMonth())
 const showCostDetail = ref(false)
 
+function getCurrentCostMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+watch(() => purchaseCostStore.allCostMonths, (newMonths, oldMonths) => {
+  const curMonth = getCurrentCostMonth()
+  if (newMonths.length === 0) {
+    costMonth.value = curMonth
+    return
+  }
+  const latestMonth = newMonths[0]
+  const prevLatest = (oldMonths && oldMonths.length > 0) ? oldMonths[0] : null
+  const latestMonthChanged = prevLatest !== null && latestMonth !== prevLatest
+  const currentInvalid = !costMonth.value || (!newMonths.includes(costMonth.value) && costMonth.value !== curMonth)
+  if (latestMonthChanged || currentInvalid) {
+    costMonth.value = latestMonth
+  }
+}, { immediate: true })
+
 const costMonthOptions = computed(() => {
-  return purchaseCostStore.allCostMonths
+  const curMonth = getCurrentCostMonth()
+  const base = [...purchaseCostStore.allCostMonths]
+  if (!base.includes(curMonth)) {
+    base.unshift(curMonth)
+  }
+  return base
 })
 
 const currentCostSummary = computed(() => {
@@ -1652,10 +1677,23 @@ function handleShoppingAdd() {
   shoppingForm.value.store = ''
 }
 
-function handlePurchased(item) {
+function handleShoppingToggle(itemId) {
+  const currentItem = shoppingStore.list.find(i => i.id === itemId)
+  if (!currentItem) return
+  if (currentItem.purchased) {
+    undoPurchased(itemId)
+  } else {
+    handlePurchased(itemId)
+  }
+}
+
+function handlePurchased(itemId) {
+  const item = shoppingStore.list.find(i => i.id === itemId)
+  if (!item) return
   let linkedFridgeItemId = null
   let originalQuantity = null
   let originalExpiryDate = null
+  let costRecordId = item.costRecordId
 
   if (item.fromExpiring && item.fridgeItemId) {
     const originalItem = fridgeStore.getItemById(item.fridgeItemId)
@@ -1681,28 +1719,33 @@ function handlePurchased(item) {
     linkedFridgeItemId = newFridgeItem.id
   }
 
-  if (item.unitPrice > 0) {
-    purchaseCostStore.addCostRecord({
+  if (item.unitPrice > 0 && !costRecordId) {
+    const fridgeItem = fridgeStore.getItemById(linkedFridgeItemId)
+    const costRecord = purchaseCostStore.addCostRecord({
       name: item.name,
       quantity: item.quantity,
       unit: item.unit,
       unitPrice: item.unitPrice,
       store: item.store || '',
-      categoryId: fridgeStore.getItemById(linkedFridgeItemId)?.categoryId || '',
-      categoryName: fridgeStore.getItemById(linkedFridgeItemId)?.categoryName || '',
-      parentCategoryId: fridgeStore.getItemById(linkedFridgeItemId)?.parentCategoryId || '',
-      parentCategoryName: fridgeStore.getItemById(linkedFridgeItemId)?.parentCategoryName || ''
+      categoryId: fridgeItem?.categoryId || '',
+      categoryName: fridgeItem?.categoryName || '',
+      parentCategoryId: fridgeItem?.parentCategoryId || '',
+      parentCategoryName: fridgeItem?.parentCategoryName || ''
     })
+    costRecordId = costRecord.id
   }
 
   shoppingStore.setPurchased(item.id, true, {
     linkedFridgeItemId,
     originalQuantity,
-    originalExpiryDate
+    originalExpiryDate,
+    costRecordId
   })
 }
 
-function undoPurchased(item) {
+function undoPurchased(itemId) {
+  const item = shoppingStore.list.find(i => i.id === itemId)
+  if (!item) return
   if (item.fromExpiring && item.fridgeItemId && item.originalQuantity !== null) {
     const originalItem = fridgeStore.getItemById(item.fridgeItemId)
     if (originalItem) {
@@ -1715,15 +1758,25 @@ function undoPurchased(item) {
     fridgeStore.removeItem(item.linkedFridgeItemId)
   }
 
+  if (item.costRecordId) {
+    purchaseCostStore.removeCostRecord(item.costRecordId)
+  }
+
   shoppingStore.setPurchased(item.id, false, {
     linkedFridgeItemId: null,
     originalQuantity: null,
-    originalExpiryDate: null
+    originalExpiryDate: null,
+    costRecordId: null
   })
 }
 
 function clearPurchasedItems() {
   if (confirm('确定清除所有已购项吗？')) {
+    shoppingStore.purchasedItems.forEach(item => {
+      if (item.costRecordId) {
+        purchaseCostStore.removeCostRecord(item.costRecordId)
+      }
+    })
     shoppingStore.clearPurchased()
   }
 }
