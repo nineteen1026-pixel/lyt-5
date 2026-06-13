@@ -40,6 +40,11 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       zone: itemData.zone,
       reason: itemData.reason,
       expiryDate: itemData.expiryDate,
+      categoryId: itemData.categoryId || '',
+      categoryName: itemData.categoryName || '',
+      parentCategoryId: itemData.parentCategoryId || '',
+      parentCategoryName: itemData.parentCategoryName || '',
+      nutritionTags: itemData.nutritionTags || [],
       discardedAt: now.toISOString(),
       month
     }

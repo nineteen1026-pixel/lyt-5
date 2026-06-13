@@ -1,4 +1,5 @@
 import { daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
+import { matchIngredientByCategory, getCategoryInfo } from '@/utils/categories'
 
 const recipes = [
   {
@@ -116,12 +117,9 @@ const recipes = [
 ]
 
 export function getRecipeSuggestions(fridgeItems, count = 2) {
-  const ingredientNames = fridgeItems.map(item => item.name.toLowerCase())
-
   const expiringItems = fridgeItems.filter(item =>
     isExpiringSoon(item.expiryDate) && !isExpired(item.expiryDate)
   )
-  const expiringNames = expiringItems.map(item => item.name.toLowerCase())
 
   const scoredRecipes = recipes.map(recipe => {
     const matchedIngredients = []
@@ -131,22 +129,17 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
     let expiringUrgencyScore = 0
 
     recipe.ingredients.forEach(ing => {
-      const ingName = ing.name.toLowerCase()
       const matchedItem = fridgeItems.find(item => {
-        const n = item.name.toLowerCase()
-        return n.includes(ingName) || ingName.includes(n)
+        return matchIngredientByCategory(item.name, ing.name)
       })
 
       if (matchedItem) {
         matchCount++
         matchedIngredients.push(ing.name)
 
-        const isExpiring = expiringNames.some(en => {
-          const n = matchedItem.name.toLowerCase()
-          return n.includes(en) || en.includes(n)
-        })
+        const isExpiringItem = expiringItems.some(ei => ei.id === matchedItem.id)
 
-        if (isExpiring && !isExpired(matchedItem.expiryDate)) {
+        if (isExpiringItem && !isExpired(matchedItem.expiryDate)) {
           expiringMatchCount++
           matchedExpiringIngredients.push({
             name: ing.name,

@@ -60,6 +60,52 @@
                 </select>
               </div>
             </div>
+            <div class="form-group">
+              <div class="category-header">
+                <label>食材品类</label>
+                <label class="auto-detect-label">
+                  <input type="checkbox" v-model="autoDetectCategory" />
+                  <span>自动识别</span>
+                </label>
+              </div>
+              <div v-if="form.categoryName" class="selected-category">
+                已选：{{ form.parentCategoryName }} / {{ form.categoryName }}
+              </div>
+              <div class="category-selector">
+                <div v-for="group in categories" :key="group.id" class="category-group">
+                  <div class="category-group-title">{{ group.name }}</div>
+                  <div class="category-items">
+                    <button
+                      v-for="sub in group.children"
+                      :key="sub.id"
+                      type="button"
+                      class="category-item"
+                      :class="{ active: form.categoryId === sub.id }"
+                      @click="handleCategorySelect(sub.id)"
+                    >
+                      <span class="category-icon">{{ sub.icon }}</span>
+                      <span class="category-name">{{ sub.name }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>营养标签</label>
+              <div class="nutrition-tags">
+                <button
+                  v-for="tag in nutritionTags"
+                  :key="tag.id"
+                  type="button"
+                  class="nutrition-tag-btn"
+                  :class="{ active: form.nutritionTags.includes(tag.id) }"
+                  :style="{ borderColor: tag.color, color: form.nutritionTags.includes(tag.id) ? 'white' : tag.color, background: form.nutritionTags.includes(tag.id) ? tag.color : 'transparent' }"
+                  @click="toggleNutritionTag(tag.id)"
+                >
+                  {{ tag.name }}
+                </button>
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary">
               ➕ 添加食材
             </button>
@@ -372,6 +418,19 @@
                 <span class="item-name">{{ item.name }}</span>
                 <span class="item-zone">{{ item.zone }}</span>
               </div>
+              <div v-if="item.categoryName" class="item-category">
+                <span class="item-category-label">{{ item.parentCategoryName }} · {{ item.categoryName }}</span>
+              </div>
+              <div v-if="item.nutritionTags && item.nutritionTags.length > 0" class="item-nutrition-tags">
+                <span
+                  v-for="tagId in item.nutritionTags"
+                  :key="tagId"
+                  class="item-nutrition-tag"
+                  :style="{ backgroundColor: getTagInfo(tagId)?.color + '20', color: getTagInfo(tagId)?.color }"
+                >
+                  {{ getTagInfo(tagId)?.name }}
+                </span>
+              </div>
               <div class="item-info">
                 <span class="item-quantity">
                   {{ item.quantity }} {{ item.unit }}
@@ -591,6 +650,14 @@ import { ref, computed, watch } from 'vue'
 import { useFridgeStore } from '@/stores/fridge'
 import { useShoppingListStore } from '@/stores/shoppingList'
 import { getRecipeSuggestions } from '@/utils/recipes'
+import { 
+  categories, 
+  nutritionTags, 
+  getCategoryInfo, 
+  getNutritionTagById,
+  getAllSubCategories,
+  matchIngredientByCategory
+} from '@/utils/categories'
 
 const fridgeStore = useFridgeStore()
 const shoppingStore = useShoppingListStore()
@@ -658,7 +725,25 @@ const form = ref({
   quantity: 1,
   unit: '个',
   expiryDate: getDefaultDate(),
-  zone: '冷藏'
+  zone: '冷藏',
+  categoryId: '',
+  categoryName: '',
+  parentCategoryId: '',
+  parentCategoryName: '',
+  nutritionTags: []
+})
+
+const autoDetectCategory = ref(true)
+
+watch(() => form.value.name, (newName) => {
+  if (autoDetectCategory.value && newName && newName.trim()) {
+    const categoryInfo = getCategoryInfo(newName.trim())
+    form.value.categoryId = categoryInfo.categoryId
+    form.value.categoryName = categoryInfo.categoryName
+    form.value.parentCategoryId = categoryInfo.parentCategoryId
+    form.value.parentCategoryName = categoryInfo.parentCategoryName
+    form.value.nutritionTags = [...categoryInfo.nutritionTags]
+  }
 })
 
 const suggestions = computed(() => {
@@ -722,10 +807,20 @@ function handleAdd() {
     quantity: form.value.quantity,
     unit: form.value.unit,
     expiryDate: form.value.expiryDate,
-    zone: form.value.zone
+    zone: form.value.zone,
+    categoryId: form.value.categoryId,
+    categoryName: form.value.categoryName,
+    parentCategoryId: form.value.parentCategoryId,
+    parentCategoryName: form.value.parentCategoryName,
+    nutritionTags: form.value.nutritionTags
   })
   form.value.name = ''
   form.value.quantity = 1
+  form.value.categoryId = ''
+  form.value.categoryName = ''
+  form.value.parentCategoryId = ''
+  form.value.parentCategoryName = ''
+  form.value.nutritionTags = []
 }
 
 function deleteItem(id) {
@@ -755,18 +850,42 @@ function useItem(item) {
 
 function hasIngredient(ingredientName) {
   return fridgeStore.items.some(item =>
-    item.name.toLowerCase().includes(ingredientName.toLowerCase()) ||
-    ingredientName.toLowerCase().includes(item.name.toLowerCase())
+    matchIngredientByCategory(item.name, ingredientName)
   )
 }
 
 function isExpiringIngredient(ingredientName, recipe) {
   if (!recipe.matchedExpiringIngredients) return false
   return recipe.matchedExpiringIngredients.some(
-    exp => exp.name === ingredientName ||
-           exp.name.toLowerCase().includes(ingredientName.toLowerCase()) ||
-           ingredientName.toLowerCase().includes(exp.name.toLowerCase())
+    exp => matchIngredientByCategory(exp.name, ingredientName)
   )
+}
+
+const allSubCategories = getAllSubCategories()
+
+function handleCategorySelect(categoryId) {
+  autoDetectCategory.value = false
+  const subCategory = allSubCategories.find(c => c.id === categoryId)
+  if (subCategory) {
+    form.value.categoryId = subCategory.id
+    form.value.categoryName = subCategory.name
+    form.value.parentCategoryId = subCategory.parentId
+    form.value.parentCategoryName = subCategory.parentName
+  }
+}
+
+function toggleNutritionTag(tagId) {
+  autoDetectCategory.value = false
+  const index = form.value.nutritionTags.indexOf(tagId)
+  if (index > -1) {
+    form.value.nutritionTags.splice(index, 1)
+  } else {
+    form.value.nutritionTags.push(tagId)
+  }
+}
+
+function getTagInfo(tagId) {
+  return getNutritionTagById(tagId)
 }
 
 function addToShoppingList(item) {
@@ -2041,6 +2160,149 @@ function handleBatchExpiring() {
   color: #90a4ae;
   margin: 8px 0 0;
   line-height: 1.5;
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.category-header label {
+  margin-bottom: 0;
+}
+
+.auto-detect-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #546e7a;
+  cursor: pointer;
+}
+
+.auto-detect-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #00897b;
+}
+
+.selected-category {
+  font-size: 13px;
+  color: #00897b;
+  background: #e0f2f1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.category-selector {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.category-group {
+  margin-bottom: 10px;
+}
+
+.category-group:last-child {
+  margin-bottom: 0;
+}
+
+.category-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #546e7a;
+  margin-bottom: 6px;
+}
+
+.category-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.category-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #cfd8dc;
+  background: white;
+  border-radius: 16px;
+  font-size: 12px;
+  color: #546e7a;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-item:hover {
+  border-color: #00897b;
+  color: #00897b;
+}
+
+.category-item.active {
+  background: #00897b;
+  color: white;
+  border-color: #00897b;
+}
+
+.category-icon {
+  font-size: 14px;
+}
+
+.nutrition-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nutrition-tag-btn {
+  padding: 4px 10px;
+  border: 1.5px solid;
+  background: transparent;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nutrition-tag-btn:hover {
+  transform: translateY(-1px);
+}
+
+.nutrition-tag-btn.active {
+  color: white;
+}
+
+.item-category {
+  margin-bottom: 6px;
+}
+
+.item-category-label {
+  font-size: 12px;
+  color: #00897b;
+  background: #e0f2f1;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.item-nutrition-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.item-nutrition-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-weight: 500;
 }
 
 @media (max-width: 900px) {

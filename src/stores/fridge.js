@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
+import { getCategoryInfo } from '@/utils/categories'
 
 const EXPIRING_DAYS_KEY = 'expiring_rule'
 
@@ -66,6 +67,7 @@ export const useFridgeStore = defineStore('fridge', () => {
   })
 
   function addItem(itemData) {
+    const categoryInfo = getCategoryInfo(itemData.name)
     const newItem = {
       id: generateId(),
       name: itemData.name,
@@ -73,6 +75,11 @@ export const useFridgeStore = defineStore('fridge', () => {
       unit: itemData.unit || '个',
       expiryDate: itemData.expiryDate,
       zone: itemData.zone || '冷藏',
+      categoryId: itemData.categoryId || categoryInfo.categoryId,
+      categoryName: itemData.categoryName || categoryInfo.categoryName,
+      parentCategoryId: itemData.parentCategoryId || categoryInfo.parentCategoryId,
+      parentCategoryName: itemData.parentCategoryName || categoryInfo.parentCategoryName,
+      nutritionTags: itemData.nutritionTags || categoryInfo.nutritionTags,
       createdAt: new Date().toISOString()
     }
     items.value.push(newItem)
@@ -107,7 +114,12 @@ export const useFridgeStore = defineStore('fridge', () => {
       unit: item.unit,
       zone: item.zone,
       reason,
-      expiryDate: item.expiryDate
+      expiryDate: item.expiryDate,
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      parentCategoryId: item.parentCategoryId,
+      parentCategoryName: item.parentCategoryName,
+      nutritionTags: item.nutritionTags
     })
     const index = items.value.findIndex(item => item.id === id)
     if (index !== -1) {
