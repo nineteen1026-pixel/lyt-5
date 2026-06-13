@@ -606,22 +606,250 @@
           </div>
         </div>
 
-        <div class="filter-bar">
-          <button
-            v-for="zone in ['全部', ...fridgeStore.zones]"
-            :key="zone"
-            class="filter-btn"
-            :class="{ active: activeZone === zone }"
-            @click="activeZone = zone"
-          >
-            {{ zone }}
-          </button>
+        <div class="advanced-filter card">
+          <div class="filter-header">
+            <div class="filter-title-row">
+              <h2>🔍 多维筛选</h2>
+              <div class="filter-count-badge" v-if="fridgeStore.activeFilterCount > 0">
+                已选 {{ fridgeStore.activeFilterCount }} 个条件
+              </div>
+            </div>
+            <button 
+              v-if="fridgeStore.activeFilterCount > 0" 
+              class="btn btn-small btn-clear-all"
+              @click="fridgeStore.clearAllFilters"
+            >
+              🗑 清空筛选
+            </button>
+          </div>
+
+          <div class="search-bar">
+            <div class="search-input-wrap">
+              <span class="search-icon">🔎</span>
+              <input
+                v-model="fridgeStore.filterState.searchKeyword"
+                type="text"
+                class="search-input"
+                placeholder="搜索食材名称、分类..."
+                @input="onSearchInput"
+              />
+              <button 
+                v-if="fridgeStore.filterState.searchKeyword" 
+                class="search-clear"
+                @click="fridgeStore.filterState.searchKeyword = ''"
+              >
+                ✕
+              </button>
+            </div>
+            <div class="search-result-hint" v-if="fridgeStore.filterState.searchKeyword">
+              找到 {{ filteredItems.length }} 条匹配结果
+            </div>
+          </div>
+
+          <div class="zone-filter-bar">
+            <span class="filter-label">分区</span>
+            <div class="filter-btn-group">
+              <button
+                v-for="zone in ['全部', ...fridgeStore.zones]"
+                :key="zone"
+                class="filter-btn"
+                :class="{ active: fridgeStore.filterState.activeZone === zone }"
+                @click="fridgeStore.setFilterState({ activeZone: zone })"
+              >
+                {{ zone }}
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-panel">
+            <div 
+              class="filter-panel-header"
+              @click="expandedFilterPanels.category = !expandedFilterPanels.category"
+            >
+              <span class="panel-toggle">{{ expandedFilterPanels.category ? '▼' : '▶' }}</span>
+              <span class="panel-title">📦 分类筛选</span>
+              <div class="panel-summary" v-if="fridgeStore.filterState.selectedParentCategories.length > 0 || fridgeStore.filterState.selectedSubCategories.length > 0">
+                已选 {{ fridgeStore.filterState.selectedParentCategories.length + fridgeStore.filterState.selectedSubCategories.length }} 个
+              </div>
+              <div class="filter-logic-switch">
+                <span class="logic-label">匹配</span>
+                <select 
+                  v-model="fridgeStore.filterState.categoryLogic" class="logic-select">
+                  <option value="OR">任一 (OR)</option>
+                  <option value="AND">全部 (AND)</option>
+                </select>
+              </div>
+              <button 
+                v-if="fridgeStore.filterState.selectedParentCategories.length > 0 || fridgeStore.filterState.selectedSubCategories.length > 0"
+                class="btn btn-small btn-panel-clear"
+                @click.stop="fridgeStore.clearCategoryFilters"
+              >清除</button>
+            </div>
+            <div v-show="expandedFilterPanels.category" class="filter-panel-body">
+              <div class="filter-sub-label">大类</div>
+              <div class="category-grid parent-cat-grid">
+                <button
+                  v-for="group in categories"
+                  :key="group.id"
+                  class="chip"
+                  :class="{ active: fridgeStore.filterState.selectedParentCategories.includes(group.id) }"
+                  @click="fridgeStore.toggleParentCategory(group.id)"
+                >
+                  <span class="chip-name">{{ group.name }}</span>
+                  <span class="chip-count">{{ fridgeStore.parentCategoryCounts[group.id] || 0 }}</span>
+                </button>
+              </div>
+              <div class="filter-sub-label">子类</div>
+              <div class="category-grid">
+                <button
+                  v-for="sub in fridgeStore.allSubCategories"
+                  :key="sub.id"
+                  class="chip sub-chip"
+                  :class="{ 
+                    active: fridgeStore.filterState.selectedSubCategories.includes(sub.id),
+                    'from-parent': isSubCatFromSelectedParent(sub.id)
+                  }"
+                  @click="fridgeStore.toggleSubCategory(sub.id)"
+                >
+                  <span class="chip-icon">{{ sub.icon }}</span>
+                  <span class="chip-name">{{ sub.name }}</span>
+                  <span class="chip-count">{{ fridgeStore.subCategoryCounts[sub.id] || 0 }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-panel">
+            <div 
+              class="filter-panel-header"
+              @click="expandedFilterPanels.tag = !expandedFilterPanels.tag"
+            >
+              <span class="panel-toggle">{{ expandedFilterPanels.tag ? '▼' : '▶' }}</span>
+              <span class="panel-title">🏷️ 营养标签</span>
+              <div class="panel-summary" v-if="fridgeStore.filterState.selectedNutritionTags.length > 0">
+                已选 {{ fridgeStore.filterState.selectedNutritionTags.length }} 个
+              </div>
+              <div class="filter-logic-switch">
+                <span class="logic-label">匹配</span>
+                <select 
+                  v-model="fridgeStore.filterState.tagLogic" class="logic-select">
+                  <option value="AND">全部 (AND)</option>
+                  <option value="OR">任一 (OR)</option>
+                </select>
+              </div>
+              <button 
+                v-if="fridgeStore.filterState.selectedNutritionTags.length > 0"
+                class="btn btn-small btn-panel-clear"
+                @click.stop="fridgeStore.clearTagFilters"
+              >清除</button>
+            </div>
+            <div v-show="expandedFilterPanels.tag" class="filter-panel-body">
+              <div class="nutrition-tags-filter">
+                <button
+                  v-for="tag in fridgeStore.allNutritionTags"
+                  :key="tag.id"
+                  class="nutrition-tag-filter-btn"
+                  :class="{ active: fridgeStore.filterState.selectedNutritionTags.includes(tag.id) }"
+                  :style="{ 
+                    borderColor: tag.color, 
+                    color: fridgeStore.filterState.selectedNutritionTags.includes(tag.id) ? 'white' : tag.color, 
+                    background: fridgeStore.filterState.selectedNutritionTags.includes(tag.id) ? tag.color : 'transparent' }"
+                  @click="fridgeStore.toggleNutritionTag(tag.id)"
+                >
+                  {{ tag.name }}
+                  <span class="tag-filter-count">{{ fridgeStore.nutritionTagCounts[tag.id] || 0 }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-panel">
+            <div 
+              class="filter-panel-header"
+              @click="expandedFilterPanels.expiry = !expandedFilterPanels.expiry"
+            >
+              <span class="panel-toggle">{{ expandedFilterPanels.expiry ? '▼' : '▶' }}</span>
+              <span class="panel-title">⏰ 保质期状态</span>
+            </div>
+            <div v-show="expandedFilterPanels.expiry" class="filter-panel-body">
+              <div class="expiry-filter-row">
+                <button
+                  v-for="opt in expiryStatusOptions"
+                  :key="opt.value"
+                  class="expiry-filter-btn"
+                  :class="{ active: fridgeStore.filterState.expiryStatus === opt.value }"
+                  :style="{ 
+                    borderColor: opt.color,
+                    color: fridgeStore.filterState.expiryStatus === opt.value ? 'white' : opt.color,
+                    background: fridgeStore.filterState.expiryStatus === opt.value ? opt.color : 'transparent'
+                  }"
+                  @click="fridgeStore.setFilterState({ expiryStatus: opt.value })"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="active-filters-summary" v-if="fridgeStore.activeFilterCount > 0">
+            <span class="summary-label">当前筛选：</span>
+            <span v-if="fridgeStore.filterState.searchKeyword" class="summary-chip">
+              🔎 {{ fridgeStore.filterState.searchKeyword }}
+              <button @click="fridgeStore.filterState.searchKeyword = ''">✕</button>
+            </span>
+            <span v-if="fridgeStore.filterState.activeZone !== '全部'" class="summary-chip">
+              📍 {{ fridgeStore.filterState.activeZone }}
+              <button @click="fridgeStore.setFilterState({ activeZone: '全部' })">✕</button>
+            </span>
+            <span 
+              v-for="catId in fridgeStore.filterState.selectedParentCategories" 
+              :key="'p-'+catId" 
+              class="summary-chip"
+            >
+              📦 {{ getParentCategoryName(catId) }}
+              <button @click="fridgeStore.toggleParentCategory(catId)">✕</button>
+            </span>
+            <span 
+              v-for="catId in fridgeStore.filterState.selectedSubCategories" 
+              :key="'s-'+catId" 
+              class="summary-chip"
+            >
+              📁 {{ getSubCategoryName(catId) }}
+              <button @click="fridgeStore.toggleSubCategory(catId)">✕</button>
+            </span>
+            <span 
+              v-for="tagId in fridgeStore.filterState.selectedNutritionTags" 
+              :key="'t-'+tagId" 
+              class="summary-chip"
+              :style="{ borderColor: getTagInfo(tagId)?.color, color: getTagInfo(tagId)?.color }"
+            >
+              🏷️ {{ getTagInfo(tagId)?.name }}
+              <button @click="fridgeStore.toggleNutritionTag(tagId)">✕</button>
+            </span>
+            <span v-if="fridgeStore.filterState.expiryStatus !== 'all'" class="summary-chip">
+              ⏰ {{ getExpiryStatusLabel(fridgeStore.filterState.expiryStatus) }}
+              <button @click="fridgeStore.setFilterState({ expiryStatus: 'all' })">✕</button>
+            </span>
+          </div>
         </div>
 
         <div class="items-list card">
-          <h2>📋 食材清单</h2>
+          <div class="items-list-header">
+            <h2>📋 食材清单</h2>
+            <div class="items-list-meta">
+              <span class="items-count">共 {{ filteredItems.length }} 项</span>
+              <span v-if="fridgeStore.activeFilterCount > 0" class="items-filtered-hint">
+                (筛选自 {{ fridgeStore.items.length }} 项)
+              </span>
+            </div>
+          </div>
           <div v-if="filteredItems.length === 0" class="empty-tip">
-            暂无食材，快去添加吧～
+            <template v-if="fridgeStore.activeFilterCount > 0">
+              没有符合筛选条件的食材，试试调整筛选条件吧～
+            </template>
+            <template v-else>
+              暂无食材，快去添加吧～
+            </template>
           </div>
           <div v-else class="item-cards">
             <div
@@ -1102,6 +1330,7 @@ import {
   getCategoryInfo, 
   getNutritionTagById,
   getAllSubCategories,
+  getSubCategoryById,
   matchIngredientByCategory,
   sanitizeNutritionTags,
   isFallbackCategory
@@ -1151,7 +1380,7 @@ const itemsListRef = ref(null)
 const shoppingListRef = ref(null)
 
 function goToExpiringItems() {
-  activeZone.value = '全部'
+  fridgeStore.setFilterState({ activeZone: '全部', expiryStatus: 'expiring' })
   nextTick(() => {
     const itemsListEl = document.querySelector('.items-list')
     if (itemsListEl) {
@@ -1194,9 +1423,14 @@ onMounted(() => {
   }
 })
 
-const activeZone = ref('全部')
 const shoppingTab = ref('pending')
 const shoppingForm = ref({ name: '', quantity: 1, unit: '个', store: '', unitPrice: 0 })
+
+const expandedFilterPanels = ref({
+  category: true,
+  tag: true,
+  expiry: false
+})
 const showExpiringDialog = ref(false)
 const expiringDialogItem = ref(null)
 const expiringDialogForm = ref({ quantity: 1, unit: '个', store: '', unitPrice: 0 })
@@ -1473,12 +1707,7 @@ const suggestions = computed(() => {
   return getRecipeSuggestions(fridgeStore.items, 2)
 })
 
-const filteredItems = computed(() => {
-  if (activeZone.value === '全部') {
-    return fridgeStore.sortedItems
-  }
-  return fridgeStore.sortedItems.filter(item => item.zone === activeZone.value)
-})
+const filteredItems = computed(() => fridgeStore.filteredItems)
 
 const displayShoppingItemsByStore = computed(() => {
   return shoppingTab.value === 'pending'
@@ -1633,6 +1862,61 @@ function toggleNutritionTag(tagId) {
 
 function getTagInfo(tagId) {
   return getNutritionTagById(tagId)
+}
+
+const expiryStatusOptions = [
+  { value: 'all', label: '全部', color: '#78909c' },
+  { value: 'normal', label: '正常', color: '#4caf50' },
+  { value: 'expiring', label: '即将过期', color: '#ff9800' },
+  { value: 'expired', label: '已过期', color: '#f44336' }
+]
+
+function getExpiryStatusLabel(status) {
+  const opt = expiryStatusOptions.find(o => o.value === status)
+  return opt ? opt.label : status
+}
+
+function getParentCategoryName(catId) {
+  const group = categories.find(g => g.id === catId)
+  return group ? group.name : catId
+}
+
+function getSubCategoryName(catId) {
+  const sub = getSubCategoryById(catId)
+  return sub ? sub.name : catId
+}
+
+function isSubCatFromSelectedParent(subCatId) {
+  const sub = getSubCategoryById(subCatId)
+  if (!sub) return false
+  return fridgeStore.filterState.selectedParentCategories.includes(sub.parentId)
+}
+
+let searchDebounceTimer = null
+function onSearchInput() {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+  }
+  searchDebounceTimer = setTimeout(() => {
+    const keyword = fridgeStore.filterState.searchKeyword.trim().toLowerCase()
+    if (!keyword) return
+    for (const group of categories) {
+      if (group.name.toLowerCase().includes(keyword)) {
+        if (!fridgeStore.filterState.selectedParentCategories.includes(group.id)) {
+          expandedFilterPanels.value.category = true
+        }
+        break
+      }
+      for (const sub of group.children) {
+        if (sub.name.toLowerCase().includes(keyword)) {
+          if (!fridgeStore.filterState.selectedSubCategories.includes(sub.id)) {
+            expandedFilterPanels.value.category = true
+          }
+          return
+        }
+      }
+    }
+  }, 300)
 }
 
 function addToShoppingList(item) {
@@ -4050,5 +4334,421 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
   font-size: 14px;
   font-weight: 600;
   color: #00796b;
+}
+
+.advanced-filter {
+  margin-bottom: 20px;
+}
+
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.filter-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-title-row h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #37474f;
+}
+
+.filter-count-badge {
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #00897b, #26a69a);
+  color: white;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.btn-clear-all {
+  background: #ffebee;
+  color: #c62828;
+  font-weight: 500;
+}
+
+.btn-clear-all:hover {
+  background: #ffcdd2;
+}
+
+.search-bar {
+  margin-bottom: 16px;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #f5f5f5;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 0 12px;
+  transition: all 0.2s;
+}
+
+.search-input-wrap:focus-within {
+  border-color: #00897b;
+  background: white;
+}
+
+.search-icon {
+  font-size: 16px;
+  margin-right: 8px;
+  opacity: 0.6;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 50%;
+  color: #90a4ae;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.search-clear:hover {
+  background: #e0e0e0;
+  color: #455a64;
+}
+
+.search-result-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #00897b;
+  font-weight: 500;
+}
+
+.zone-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f8faf9;
+  border-radius: 10px;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #546e7a;
+  flex-shrink: 0;
+}
+
+.filter-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.filter-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fafafa;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.filter-panel-header:hover {
+  background: #f0f0f0;
+}
+
+.panel-toggle {
+  font-size: 12px;
+  color: #78909c;
+  width: 16px;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #37474f;
+  flex: 1;
+}
+
+.panel-summary {
+  font-size: 12px;
+  color: #00897b;
+  font-weight: 500;
+}
+
+.filter-logic-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.logic-label {
+  font-size: 12px;
+  color: #78909c;
+}
+
+.logic-select {
+  padding: 4px 8px;
+  border: 1px solid #cfd8dc;
+  border-radius: 6px;
+  font-size: 12px;
+  background: white;
+  cursor: pointer;
+  outline: none;
+}
+
+.logic-select:focus {
+  border-color: #00897b;
+}
+
+.btn-panel-clear {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: #eceff1;
+  color: #546e7a;
+}
+
+.btn-panel-clear:hover {
+  background: #cfd8dc;
+}
+
+.filter-panel-body {
+  padding: 14px;
+  border-top: 1px solid #eef0f1;
+}
+
+.filter-sub-label {
+  font-size: 12px;
+  color: #78909c;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.parent-cat-grid {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 20px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  color: #546e7a;
+}
+
+.chip:hover {
+  border-color: #b0bec5;
+  background: #fafafa;
+}
+
+.chip.active {
+  background: linear-gradient(135deg, #00897b, #26a69a);
+  border-color: #00897b;
+  color: white;
+}
+
+.sub-chip.from-parent {
+  border-color: #80cbc4;
+  background: #e0f2f1;
+}
+
+.sub-chip.from-parent:not(.active) {
+  color: #00695c;
+}
+
+.chip-icon {
+  font-size: 14px;
+}
+
+.chip-name {
+  font-weight: 500;
+}
+
+.chip-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  opacity: 0.8;
+}
+
+.chip.active .chip-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.nutrition-tags-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nutrition-tag-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1.5px solid;
+  border-radius: 20px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nutrition-tag-filter-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tag-filter-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  opacity: 0.8;
+}
+
+.nutrition-tag-filter-btn.active .tag-filter-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.expiry-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.expiry-filter-btn {
+  padding: 8px 20px;
+  border: 1.5px solid;
+  border-radius: 20px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.expiry-filter-btn:hover {
+  transform: translateY(-1px);
+}
+
+.active-filters-summary {
+  margin-top: 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, #e8f5e9, #e0f2f1);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #37474f;
+}
+
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #cfd8dc;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #546e7a;
+}
+
+.summary-chip button {
+  border: none;
+  background: #eceff1;
+  color: #78909c;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.summary-chip button:hover {
+  background: #ef5350;
+  color: white;
+}
+
+.items-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.items-list-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #37474f;
+}
+
+.items-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.items-count {
+  font-size: 13px;
+  color: #00897b;
+  font-weight: 600;
+}
+
+.items-filtered-hint {
+  font-size: 12px;
+  color: #90a4ae;
 }
 </style>

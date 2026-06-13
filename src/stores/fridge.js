@@ -8,7 +8,14 @@ import {
 } from '@/utils/storage'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
 import { usePurchaseCostStore } from '@/stores/purchaseCost'
-import { getCategoryInfo, sanitizeNutritionTags } from '@/utils/categories'
+import { 
+  getCategoryInfo, 
+  sanitizeNutritionTags, 
+  categories, 
+  nutritionTags, 
+  getAllSubCategories,
+  getSubCategoryById
+} from '@/utils/categories'
 
 const EXPIRING_DAYS_KEY = 'expiring_rule'
 const NOTIFICATION_ENABLED_KEY = 'notification_enabled'
@@ -75,6 +82,224 @@ export const useFridgeStore = defineStore('fridge', () => {
   )
 
   const zones = ['冷藏', '冷冻', '保鲜', '门架']
+
+  const filterState = ref({
+    searchKeyword: '',
+    activeZone: '全部',
+    selectedParentCategories: [],
+    selectedSubCategories: [],
+    selectedNutritionTags: [],
+    expiryStatus: 'all',
+    tagLogic: 'AND',
+    categoryLogic: 'AND'
+  })
+
+  const allParentCategories = computed(() => 
+    categories.map(g => ({ id: g.id, name: g.name, count: g.children.length }))
+  )
+
+  const allSubCategories = computed(() => getAllSubCategories())
+
+  const allNutritionTags = computed(() => nutritionTags)
+
+  const itemsByParentCategory = computed(() => {
+    const result = {}
+    categories.forEach(group => {
+      result[group.id] = items.value.filter(item => item.parentCategoryId === group.id)
+    })
+    return result
+  })
+
+  const itemsBySubCategory = computed(() => {
+    const result = {}
+    getAllSubCategories().forEach(sub => {
+      result[sub.id] = items.value.filter(item => item.categoryId === sub.id)
+    })
+    return result
+  })
+
+  const itemsByNutritionTag = computed(() => {
+    const result = {}
+    nutritionTags.forEach(tag => {
+      result[tag.id] = items.value.filter(item => 
+        item.nutritionTags && item.nutritionTags.includes(tag.id)
+      )
+    })
+    return result
+  })
+
+  const parentCategoryCounts = computed(() => {
+    const counts = {}
+    categories.forEach(group => {
+      counts[group.id] = items.value.filter(item => item.parentCategoryId === group.id).length
+    })
+    return counts
+  })
+
+  const subCategoryCounts = computed(() => {
+    const counts = {}
+    getAllSubCategories().forEach(sub => {
+      counts[sub.id] = items.value.filter(item => item.categoryId === sub.id).length
+    })
+    return counts
+  })
+
+  const nutritionTagCounts = computed(() => {
+    const counts = {}
+    nutritionTags.forEach(tag => {
+      counts[tag.id] = items.value.filter(item => 
+        item.nutritionTags && item.nutritionTags.includes(tag.id)
+      ).length
+    })
+    return counts
+  })
+
+  const filteredItems = computed(() => {
+    const fs = filterState.value
+    let result = [...items.value]
+
+    if (fs.searchKeyword && fs.searchKeyword.trim()) {
+      const keyword = fs.searchKeyword.trim().toLowerCase()
+      result = result.filter(item => 
+        item.name.toLowerCase().includes(keyword) ||
+        (item.categoryName && item.categoryName.toLowerCase().includes(keyword)) ||
+        (item.parentCategoryName && item.parentCategoryName.toLowerCase().includes(keyword))
+      )
+    }
+
+    if (fs.activeZone !== '全部') {
+      result = result.filter(item => item.zone === fs.activeZone)
+    }
+
+    if (fs.selectedParentCategories.length > 0) {
+      if (fs.categoryLogic === 'AND') {
+        result = result.filter(item => 
+          fs.selectedParentCategories.every(cat => item.parentCategoryId === cat)
+        )
+      } else {
+        result = result.filter(item => 
+          fs.selectedParentCategories.includes(item.parentCategoryId)
+        )
+      }
+    }
+
+    if (fs.selectedSubCategories.length > 0) {
+      if (fs.categoryLogic === 'AND') {
+        result = result.filter(item => 
+          fs.selectedSubCategories.every(cat => item.categoryId === cat)
+        )
+      } else {
+        result = result.filter(item => 
+          fs.selectedSubCategories.includes(item.categoryId)
+        )
+      }
+    }
+
+    if (fs.selectedNutritionTags.length > 0) {
+      if (fs.tagLogic === 'AND') {
+        result = result.filter(item => 
+          item.nutritionTags && 
+          fs.selectedNutritionTags.every(tag => item.nutritionTags.includes(tag))
+        )
+      } else {
+        result = result.filter(item => 
+          item.nutritionTags && 
+          fs.selectedNutritionTags.some(tag => item.nutritionTags.includes(tag))
+        )
+      }
+    }
+
+    if (fs.expiryStatus !== 'all') {
+      switch (fs.expiryStatus) {
+        case 'expired':
+          result = result.filter(item => isExpired(item.expiryDate))
+          break
+        case 'expiring':
+          result = result.filter(item => 
+            isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+          )
+          break
+        case 'normal':
+          result = result.filter(item => 
+            !isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+          )
+          break
+      }
+    }
+
+    result.sort((a, b) => {
+      const daysA = daysUntilExpiry(a.expiryDate)
+      const daysB = daysUntilExpiry(b.expiryDate)
+      return daysA - daysB
+    })
+
+    return result
+  })
+
+  const activeFilterCount = computed(() => {
+    const fs = filterState.value
+    let count = 0
+    if (fs.searchKeyword && fs.searchKeyword.trim()) count++
+    if (fs.activeZone !== '全部') count++
+    if (fs.selectedParentCategories.length > 0) count++
+    if (fs.selectedSubCategories.length > 0) count++
+    if (fs.selectedNutritionTags.length > 0) count++
+    if (fs.expiryStatus !== 'all') count++
+    return count
+  })
+
+  function setFilterState(updates) {
+    filterState.value = { ...filterState.value, ...updates }
+  }
+
+  function toggleParentCategory(categoryId) {
+    const idx = filterState.value.selectedParentCategories.indexOf(categoryId)
+    if (idx > -1) {
+      filterState.value.selectedParentCategories.splice(idx, 1)
+    } else {
+      filterState.value.selectedParentCategories.push(categoryId)
+    }
+  }
+
+  function toggleSubCategory(categoryId) {
+    const idx = filterState.value.selectedSubCategories.indexOf(categoryId)
+    if (idx > -1) {
+      filterState.value.selectedSubCategories.splice(idx, 1)
+    } else {
+      filterState.value.selectedSubCategories.push(categoryId)
+    }
+  }
+
+  function toggleNutritionTag(tagId) {
+    const idx = filterState.value.selectedNutritionTags.indexOf(tagId)
+    if (idx > -1) {
+      filterState.value.selectedNutritionTags.splice(idx, 1)
+    } else {
+      filterState.value.selectedNutritionTags.push(tagId)
+    }
+  }
+
+  function clearAllFilters() {
+    filterState.value = {
+      searchKeyword: '',
+      activeZone: '全部',
+      selectedParentCategories: [],
+      selectedSubCategories: [],
+      selectedNutritionTags: [],
+      expiryStatus: 'all',
+      tagLogic: 'AND',
+      categoryLogic: 'AND'
+    }
+  }
+
+  function clearCategoryFilters() {
+    filterState.value.selectedParentCategories = []
+    filterState.value.selectedSubCategories = []
+  }
+
+  function clearTagFilters() {
+    filterState.value.selectedNutritionTags = []
+  }
 
   const sortedItems = computed(() => {
     return [...items.value].sort((a, b) => {
@@ -366,12 +591,31 @@ export const useFridgeStore = defineStore('fridge', () => {
     notificationEnabled,
     notificationDays,
     notificationPermission,
+    filterState,
+    allParentCategories,
+    allSubCategories,
+    allNutritionTags,
+    itemsByParentCategory,
+    itemsBySubCategory,
+    itemsByNutritionTag,
+    parentCategoryCounts,
+    subCategoryCounts,
+    nutritionTagCounts,
     sortedItems,
+    filteredItems,
+    activeFilterCount,
     expiringSoonItems,
     notifiableItems,
     unnotifiedItems,
     expiredItems,
     itemsByZone,
+    setFilterState,
+    toggleParentCategory,
+    toggleSubCategory,
+    toggleNutritionTag,
+    clearAllFilters,
+    clearCategoryFilters,
+    clearTagFilters,
     addItem,
     updateItem,
     removeItem,
