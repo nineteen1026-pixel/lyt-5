@@ -417,6 +417,52 @@
           </div>
         </div>
 
+        <div class="io-toolbar card">
+          <div class="io-group">
+            <span class="io-label">📤 导出</span>
+            <button class="btn btn-small btn-io" @click="handleExportJSON">JSON</button>
+            <button class="btn btn-small btn-io" @click="handleExportCSV">CSV</button>
+          </div>
+          <div class="io-divider"></div>
+          <div class="io-group">
+            <span class="io-label">📥 导入</span>
+            <label class="btn btn-small btn-io btn-file-label">
+              JSON
+              <input
+                type="file"
+                accept=".json,application/json"
+                style="display:none"
+                @change="handleImportJSON"
+              />
+            </label>
+            <label class="btn btn-small btn-io btn-file-label">
+              CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                style="display:none"
+                @change="handleImportCSV"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div v-if="selectedItemIds.size > 0" class="batch-toolbar card">
+          <div class="batch-info">
+            ✅ 已选中 <strong>{{ selectedItemIds.size }}</strong> 项
+          </div>
+          <div class="batch-actions">
+            <button class="btn btn-small btn-batch" @click="selectAllItems">全选当前</button>
+            <button class="btn btn-small btn-batch" @click="clearSelected">取消选择</button>
+            <button class="btn btn-small btn-batch btn-batch-zone" @click="showBatchZoneDialog = true">
+              🔀 改分区
+            </button>
+            <button class="btn btn-small btn-batch btn-batch-expiry" @click="showBatchExpiryDialog = true">
+              ⏳ 延保质期
+            </button>
+          </div>
+        </div>
+
         <div class="filter-bar">
           <button
             v-for="zone in ['全部', ...fridgeStore.zones]"
@@ -441,12 +487,21 @@
               class="item-card"
               :class="{
                 'expiring-soon': fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate),
-                'expired': fridgeStore.isExpired(item.expiryDate)
+                'expired': fridgeStore.isExpired(item.expiryDate),
+                'selected': selectedItemIds.has(item.id)
               }"
             >
-              <div class="item-header">
-                <span class="item-name">{{ item.name }}</span>
-                <span class="item-zone">{{ item.zone }}</span>
+              <div class="item-select-row">
+                <input
+                  type="checkbox"
+                  class="item-checkbox"
+                  :checked="selectedItemIds.has(item.id)"
+                  @change="toggleItemSelection(item.id)"
+                />
+                <div class="item-header">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span class="item-zone">{{ item.zone }}</span>
+                </div>
               </div>
               <div v-if="item.categoryName" class="item-category">
                 <span class="item-category-label">{{ item.parentCategoryName }} · {{ item.categoryName }}</span>
@@ -731,6 +786,160 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showBatchZoneDialog" class="batch-dialog-overlay" @click.self="showBatchZoneDialog = false">
+      <div class="batch-dialog">
+        <div class="batch-dialog-header">
+          <h3>🔀 批量修改分区</h3>
+          <button class="batch-dialog-close" @click="showBatchZoneDialog = false">✕</button>
+        </div>
+        <div class="batch-dialog-body">
+          <p class="batch-dialog-tip">将对选中的 <strong>{{ selectedItemIds.size }}</strong> 项食材修改分区</p>
+          <div class="form-group">
+            <label>选择目标分区</label>
+            <select v-model="batchForm.zone">
+              <option v-for="zone in fridgeStore.zones" :key="zone" :value="zone">{{ zone }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="batch-dialog-footer">
+          <button class="btn btn-small" @click="showBatchZoneDialog = false">取消</button>
+          <button class="btn btn-primary btn-footer" @click="confirmBatchZone">确认修改</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showBatchExpiryDialog" class="batch-dialog-overlay" @click.self="showBatchExpiryDialog = false">
+      <div class="batch-dialog">
+        <div class="batch-dialog-header">
+          <h3>⏳ 批量延长保质期</h3>
+          <button class="batch-dialog-close" @click="showBatchExpiryDialog = false">✕</button>
+        </div>
+        <div class="batch-dialog-body">
+          <p class="batch-dialog-tip">将对选中的 <strong>{{ selectedItemIds.size }}</strong> 项食材延长保质期</p>
+          <div class="form-group">
+            <label>延长天数</label>
+            <select v-model.number="batchForm.expiryDays">
+              <option :value="1">+ 1 天</option>
+              <option :value="3">+ 3 天</option>
+              <option :value="7">+ 7 天</option>
+              <option :value="14">+ 14 天</option>
+              <option :value="30">+ 30 天</option>
+            </select>
+          </div>
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="batchForm.negativeDaysAllowed" />
+              <span>允许减少天数（负数）</span>
+            </label>
+          </div>
+          <div v-if="batchForm.negativeDaysAllowed" class="form-group">
+            <label>自定义天数（正数增加，负数减少）</label>
+            <input v-model.number="batchForm.expiryDaysCustom" type="number" placeholder="如：-2 表示缩短2天" />
+          </div>
+        </div>
+        <div class="batch-dialog-footer">
+          <button class="btn btn-small" @click="showBatchExpiryDialog = false">取消</button>
+          <button class="btn btn-primary btn-footer" @click="confirmBatchExpiry">确认延长</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showImportPreview" class="import-dialog-overlay" @click.self="cancelImport">
+      <div class="import-dialog">
+        <div class="import-dialog-header">
+          <h3>📥 导入预览</h3>
+          <button class="import-dialog-close" @click="cancelImport">✕</button>
+        </div>
+        <div class="import-dialog-body" v-if="importPreviewData">
+          <div v-if="importPreviewData.version" class="import-version-row">
+            <span class="import-version-label">数据版本</span>
+            <span class="import-version-value">{{ importPreviewData.version }}</span>
+          </div>
+          <div v-if="importPreviewData.exportedAt" class="import-version-row">
+            <span class="import-version-label">导出时间</span>
+            <span class="import-version-value">{{ formatDateTime(importPreviewData.exportedAt) }}</span>
+          </div>
+
+          <div class="import-summary">
+            <div class="import-summary-item">
+              <span class="summary-icon">🧊</span>
+              <div>
+                <span class="summary-count">{{ importPreviewData.fridgeItems.length }}</span>
+                <span class="summary-label">条冰箱食材</span>
+              </div>
+            </div>
+            <div class="import-summary-item">
+              <span class="summary-icon">🛒</span>
+              <div>
+                <span class="summary-count">{{ importPreviewData.shoppingItems.length }}</span>
+                <span class="summary-label">条购物清单项</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>导入模式</label>
+            <div class="import-mode-options">
+              <label class="import-mode-option">
+                <input type="radio" v-model="importMode" value="merge" />
+                <div class="import-mode-content">
+                  <div class="import-mode-title">🧩 合并追加</div>
+                  <div class="import-mode-desc">保留现有数据，将导入数据追加到末尾</div>
+                </div>
+              </label>
+              <label class="import-mode-option">
+                <input type="radio" v-model="importMode" value="replace" />
+                <div class="import-mode-content">
+                  <div class="import-mode-title">🔄 覆盖替换</div>
+                  <div class="import-mode-desc">删除所有现有数据，用导入数据完全替换</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="importPreviewData.fridgeItems.length > 0" class="import-preview-section">
+            <h4>🍎 冰箱食材预览（前5条）</h4>
+            <table class="import-preview-table">
+              <thead>
+                <tr><th>名称</th><th>数量</th><th>保质期</th><th>分区</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, idx) in importPreviewData.fridgeItems.slice(0, 5)" :key="idx">
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.quantity }}{{ item.unit }}</td>
+                  <td>{{ item.expiryDate || '-' }}</td>
+                  <td>{{ item.zone || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div v-if="importPreviewData.shoppingItems.length > 0" class="import-preview-section">
+            <h4>🛒 购物清单预览（前5条）</h4>
+            <table class="import-preview-table">
+              <thead>
+                <tr><th>名称</th><th>数量</th><th>单价</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, idx) in importPreviewData.shoppingItems.slice(0, 5)" :key="idx">
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.quantity }}{{ item.unit }}</td>
+                  <td>¥{{ item.unitPrice || 0 }}</td>
+                  <td>{{ item.purchased ? '已购' : '待购' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="import-dialog-footer">
+          <button class="btn btn-small" @click="cancelImport">取消</button>
+          <button class="btn btn-primary btn-footer" @click="confirmImport">
+            {{ importMode === 'replace' ? '⚠ 确认覆盖导入' : '确认合并导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -751,6 +960,13 @@ import {
   sanitizeNutritionTags,
   isFallbackCategory
 } from '@/utils/categories'
+import {
+  exportToJSON,
+  exportToCSV,
+  parseJSONFile,
+  parseCSVFile,
+  addDaysToDate
+} from '@/utils/dataIO'
 
 const fridgeStore = useFridgeStore()
 const shoppingStore = useShoppingListStore()
@@ -841,6 +1057,143 @@ const settingsForm = ref({
   notificationDays: 3
 })
 const newStoreName = ref('')
+
+const selectedItemIds = ref(new Set())
+const showBatchZoneDialog = ref(false)
+const showBatchExpiryDialog = ref(false)
+const batchForm = ref({
+  zone: '冷藏',
+  expiryDays: 7,
+  negativeDaysAllowed: false,
+  expiryDaysCustom: 0
+})
+
+const showImportPreview = ref(false)
+const importPreviewData = ref(null)
+const importMode = ref('merge')
+
+function toggleItemSelection(id) {
+  const next = new Set(selectedItemIds.value)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+  }
+  selectedItemIds.value = next
+}
+
+function selectAllItems() {
+  const next = new Set(filteredItems.value.map(i => i.id))
+  selectedItemIds.value = next
+}
+
+function clearSelected() {
+  selectedItemIds.value = new Set()
+}
+
+function confirmBatchZone() {
+  if (selectedItemIds.value.size === 0 || !batchForm.value.zone) return
+  const ids = Array.from(selectedItemIds.value)
+  const count = fridgeStore.batchUpdateZone(ids, batchForm.value.zone)
+  showBatchZoneDialog.value = false
+  clearSelected()
+  alert(`已成功修改 ${count} 项食材的分区为「${batchForm.value.zone}」`)
+}
+
+function confirmBatchExpiry() {
+  if (selectedItemIds.value.size === 0) return
+  let days = batchForm.value.expiryDays
+  if (batchForm.value.negativeDaysAllowed && !isNaN(batchForm.value.expiryDaysCustom)) {
+    days = batchForm.value.expiryDaysCustom
+  }
+  if (isNaN(days)) {
+    alert('请输入有效的天数')
+    return
+  }
+  const ids = Array.from(selectedItemIds.value)
+  const count = fridgeStore.batchExtendExpiry(ids, days)
+  showBatchExpiryDialog.value = false
+  clearSelected()
+  const action = days >= 0 ? '延长' : '缩短'
+  alert(`已成功${action} ${count} 项食材的保质期 ${Math.abs(days)} 天`)
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return '-'
+  const d = new Date(isoStr)
+  if (isNaN(d.getTime())) return isoStr
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function handleExportJSON() {
+  exportToJSON(fridgeStore.items, shoppingStore.list)
+  alert('JSON 数据已导出！')
+}
+
+function handleExportCSV() {
+  exportToCSV(fridgeStore.items, shoppingStore.list)
+  alert('CSV 数据已导出！')
+}
+
+async function handleImportJSON(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    const data = await parseJSONFile(file)
+    importPreviewData.value = data
+    importMode.value = 'merge'
+    showImportPreview.value = true
+  } catch (err) {
+    alert('导入失败：' + err.message)
+  }
+}
+
+async function handleImportCSV(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    const data = await parseCSVFile(file)
+    importPreviewData.value = data
+    importMode.value = 'merge'
+    showImportPreview.value = true
+  } catch (err) {
+    alert('导入失败：' + err.message)
+  }
+}
+
+function cancelImport() {
+  showImportPreview.value = false
+  importPreviewData.value = null
+}
+
+function confirmImport() {
+  if (!importPreviewData.value) return
+  const { fridgeItems, shoppingItems } = importPreviewData.value
+  const isReplace = importMode.value === 'replace'
+  const totalItems = fridgeItems.length + shoppingItems.length
+
+  if (isReplace) {
+    const confirmText = `确认要覆盖现有数据吗？\n\n将删除 ${fridgeStore.items.length} 条食材和 ${shoppingStore.list.length} 条购物项，替换为导入的 ${fridgeItems.length} 条食材和 ${shoppingItems.length} 条购物项。\n\n此操作不可恢复！`
+    if (!confirm(confirmText)) return
+  }
+
+  try {
+    if (isReplace) {
+      fridgeStore.replaceAllItems(fridgeItems)
+      shoppingStore.replaceAllItems(shoppingItems)
+    } else {
+      if (fridgeItems.length > 0) fridgeStore.addItemsBulk(fridgeItems)
+      if (shoppingItems.length > 0) shoppingStore.addItemsBulk(shoppingItems)
+    }
+    cancelImport()
+    const action = isReplace ? '覆盖替换' : '合并追加'
+    alert(`导入成功！\n模式：${action}\n冰箱食材：${fridgeItems.length} 条\n购物清单：${shoppingItems.length} 条`)
+  } catch (err) {
+    alert('导入出错：' + err.message)
+  }
+}
 
 watch(() => shoppingForm.value.name, (newName) => {
   if (newName && newName.trim()) {
@@ -2685,6 +3038,407 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 .status-default {
   color: #f57c00;
   font-weight: 600;
+}
+
+.io-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.io-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.io-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #37474f;
+}
+
+.io-divider {
+  width: 1px;
+  height: 24px;
+  background: #e0e0e0;
+}
+
+.btn-io {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  font-weight: 500;
+}
+
+.btn-io:hover {
+  background: linear-gradient(135deg, #bbdefb, #90caf9);
+  color: #0d47a1;
+}
+
+.btn-file-label {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+  border: 1px solid #ffd54f;
+}
+
+.batch-info {
+  font-size: 14px;
+  color: #e65100;
+  font-weight: 500;
+}
+
+.batch-info strong {
+  font-size: 16px;
+  color: #bf360c;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-batch {
+  background: white;
+  color: #5d4037;
+  border: 1px solid #d7ccc8;
+}
+
+.btn-batch:hover {
+  background: #fff3e0;
+  color: #e65100;
+  border-color: #ffab91;
+}
+
+.btn-batch-zone {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  color: #2e7d32;
+  border-color: #81c784;
+}
+
+.btn-batch-zone:hover {
+  background: linear-gradient(135deg, #c8e6c9, #a5d6a7);
+  color: #1b5e20;
+}
+
+.btn-batch-expiry {
+  background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+  color: #6a1b9a;
+  border-color: #ba68c8;
+}
+
+.btn-batch-expiry:hover {
+  background: linear-gradient(135deg, #e1bee7, #ce93d8);
+  color: #4a148c;
+}
+
+.item-select-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.item-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #00897b;
+  cursor: pointer;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.item-card.selected {
+  border: 2px solid #00897b;
+  background: linear-gradient(135deg, #e0f2f1 0%, #ffffff 100%);
+  box-shadow: 0 2px 8px rgba(0, 137, 123, 0.15);
+}
+
+.item-card.selected .item-header {
+  width: 100%;
+}
+
+.batch-dialog-overlay,
+.import-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.batch-dialog,
+.import-dialog {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 520px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.import-dialog {
+  max-width: 620px;
+}
+
+.batch-dialog-header,
+.import-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-bottom: 1px solid #ffcc80;
+}
+
+.import-dialog-header {
+  background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+  border-bottom-color: #9fa8da;
+}
+
+.batch-dialog-header h3,
+.import-dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #e65100;
+}
+
+.import-dialog-header h3 {
+  color: #283593;
+}
+
+.batch-dialog-close,
+.import-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #e65100;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.import-dialog-close {
+  color: #283593;
+}
+
+.batch-dialog-close:hover {
+  background: rgba(230, 81, 0, 0.1);
+}
+
+.import-dialog-close:hover {
+  background: rgba(40, 53, 147, 0.1);
+}
+
+.batch-dialog-body,
+.import-dialog-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.batch-dialog-tip {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: #fff8e1;
+  border-radius: 8px;
+  border-left: 3px solid #ffb300;
+  font-size: 14px;
+  color: #5d4037;
+}
+
+.batch-dialog-body .form-group,
+.import-dialog-body .form-group {
+  margin-bottom: 16px;
+}
+
+.batch-dialog-body label,
+.import-dialog-body label {
+  display: block;
+  font-size: 14px;
+  color: #546e7a;
+  margin-bottom: 6px;
+}
+
+.batch-dialog-body select,
+.batch-dialog-body input,
+.import-dialog-body select,
+.import-dialog-body input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.batch-dialog-footer,
+.import-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+}
+
+.btn-footer {
+  width: auto;
+  padding: 8px 20px;
+}
+
+.import-version-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed #e0e0e0;
+}
+
+.import-version-label {
+  color: #78909c;
+}
+
+.import-version-value {
+  color: #283593;
+  font-weight: 600;
+}
+
+.import-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.import-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(135deg, #f5f5f5, #eeeeee);
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+}
+
+.summary-icon {
+  font-size: 32px;
+}
+
+.summary-count {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #37474f;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: #78909c;
+}
+
+.import-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.import-mode-option:hover {
+  border-color: #90a4ae;
+  background: #fafafa;
+}
+
+.import-mode-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #00897b;
+  margin-top: 2px;
+}
+
+.import-mode-option:has(input:checked) {
+  border-color: #00897b;
+  background: linear-gradient(135deg, #e0f2f1, #ffffff);
+}
+
+.import-mode-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #263238;
+  margin-bottom: 2px;
+}
+
+.import-mode-desc {
+  font-size: 12px;
+  color: #78909c;
+  line-height: 1.5;
+}
+
+.import-preview-section {
+  margin-top: 18px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #eceff1;
+}
+
+.import-preview-section h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #37474f;
+}
+
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.import-preview-table th,
+.import-preview-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.import-preview-table th {
+  background: #eceff1;
+  color: #546e7a;
+  font-weight: 600;
+}
+
+.import-preview-table tr:last-child td {
+  border-bottom: none;
 }
 
 @media (max-width: 900px) {

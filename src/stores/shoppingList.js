@@ -430,6 +430,79 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
     return batchAddFromExpiring(expiringItems)
   }
 
+  function replaceAllItems(newItems) {
+    list.value = []
+    const added = []
+    newItems.forEach(itemData => {
+      const existing = list.value.find(
+        item => item.name === itemData.name && !item.purchased
+      )
+      if (existing) {
+        existing.quantity += itemData.quantity || 1
+        added.push(existing)
+      } else {
+        const newItem = {
+          id: generateId(),
+          name: itemData.name,
+          quantity: itemData.quantity || 1,
+          unit: itemData.unit || '个',
+          store: itemData.store || '',
+          unitPrice: itemData.unitPrice || 0,
+          purchased: itemData.purchased || false,
+          fromExpiring: itemData.fromExpiring || false,
+          fromMealPlan: itemData.fromMealPlan || false,
+          fridgeItemId: itemData.fridgeItemId || null,
+          linkedFridgeItemId: itemData.linkedFridgeItemId || null,
+          originalQuantity: itemData.originalQuantity || null,
+          originalExpiryDate: itemData.originalExpiryDate || null,
+          createdAt: itemData.createdAt || new Date().toISOString()
+        }
+        list.value.push(newItem)
+        if (itemData.store) {
+          addStore(itemData.store)
+        }
+        added.push(newItem)
+      }
+    })
+    return added
+  }
+
+  function addItemsBulk(newItems) {
+    const added = []
+    newItems.forEach(itemData => {
+      const existing = list.value.find(
+        item => item.name === itemData.name && !item.purchased
+      )
+      if (existing) {
+        existing.quantity += itemData.quantity || 1
+        added.push(existing)
+      } else {
+        const newItem = {
+          id: generateId(),
+          name: itemData.name,
+          quantity: itemData.quantity || 1,
+          unit: itemData.unit || '个',
+          store: itemData.store || '',
+          unitPrice: itemData.unitPrice || 0,
+          purchased: itemData.purchased || false,
+          fromExpiring: itemData.fromExpiring || false,
+          fromMealPlan: itemData.fromMealPlan || false,
+          fridgeItemId: itemData.fridgeItemId || null,
+          linkedFridgeItemId: null,
+          originalQuantity: null,
+          originalExpiryDate: null,
+          createdAt: itemData.createdAt || new Date().toISOString()
+        }
+        list.value.push(newItem)
+        if (itemData.store) {
+          addStore(itemData.store)
+        }
+        added.push(newItem)
+      }
+    })
+    return added
+  }
+
   watch(
     list,
     (newList) => {
@@ -497,6 +570,8 @@ export const useShoppingListStore = defineStore('shoppingList', () => {
     getLastPrice,
     getLastStore,
     getPriceHistory,
-    processAutoReplenish
+    processAutoReplenish,
+    replaceAllItems,
+    addItemsBulk
   }
 })

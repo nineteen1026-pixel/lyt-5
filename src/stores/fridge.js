@@ -262,6 +262,62 @@ export const useFridgeStore = defineStore('fridge', () => {
     }
   }
 
+  function batchUpdateZone(ids, zone) {
+    if (!ids || ids.length === 0 || !zone) return 0
+    let count = 0
+    ids.forEach(id => {
+      const index = items.value.findIndex(item => item.id === id)
+      if (index !== -1) {
+        items.value[index] = { ...items.value[index], zone }
+        count++
+      }
+    })
+    return count
+  }
+
+  function batchExtendExpiry(ids, days) {
+    if (!ids || ids.length === 0) return 0
+    const addDays = (dateStr, d) => {
+      if (!dateStr) return dateStr
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return dateStr
+      date.setDate(date.getDate() + d)
+      return date.toISOString().split('T')[0]
+    }
+    let count = 0
+    ids.forEach(id => {
+      const index = items.value.findIndex(item => item.id === id)
+      if (index !== -1) {
+        items.value[index] = {
+          ...items.value[index],
+          expiryDate: addDays(items.value[index].expiryDate, days)
+        }
+        resetNotificationRecord(id)
+        count++
+      }
+    })
+    return count
+  }
+
+  function replaceAllItems(newItems) {
+    items.value = []
+    const added = []
+    newItems.forEach(itemData => {
+      const addedItem = addItem(itemData)
+      added.push(addedItem)
+    })
+    return added
+  }
+
+  function addItemsBulk(newItems) {
+    const added = []
+    newItems.forEach(itemData => {
+      const addedItem = addItem(itemData)
+      added.push(addedItem)
+    })
+    return added
+  }
+
   watch(
     items,
     (newItems) => {
@@ -319,6 +375,10 @@ export const useFridgeStore = defineStore('fridge', () => {
     resetNotificationRecord,
     daysUntilExpiry,
     isExpiringSoon,
-    isExpired
+    isExpired,
+    batchUpdateZone,
+    batchExtendExpiry,
+    replaceAllItems,
+    addItemsBulk
   }
 })
