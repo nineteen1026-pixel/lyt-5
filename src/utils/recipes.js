@@ -503,10 +503,10 @@ export function runRecipeSuggestionTests() {
       allExpBeforeNon, true)
 
     const expiringItemCount = testItems.filter(i => isItemExpiringSoon(i) && !isExpired(i.expiryDate)).length
-    assert('R3: 临期判定与冰箱规则一致（保鲜/茄果2天+冷藏/蛋类5天+冷冻/猪肉3天+根茎5天=4个临期）',
-      expiringItemCount, 4)
+    assert('R3: 临期判定与冰箱规则一致（茄果类3天+蛋类5天+根茎类5天=3个临期）',
+      expiringItemCount, 3)
 
-    assert('R4: 番茄(保鲜2天规则，剩1天)判定为临期',
+    assert('R4: 番茄(茄果类3天规则，剩1天)判定为临期',
       isItemExpiringSoon(testItems[0]), true)
 
     assert('R5: 鸡蛋(冷藏蛋类5天规则，剩4天)判定为临期',
@@ -537,8 +537,8 @@ export function runRecipeSuggestionTests() {
     }
 
     const greenPepperPork = suggestions.find(r => r.name === '青椒肉丝')
-    assert('R12: 青椒肉丝无临期匹配（青椒不临期，猪肉不临期）',
-      greenPepperPork?.expiringMatchCount, 0)
+    assert('R12: 青椒肉丝有1个临期匹配（青椒匹配临期番茄，猪肉匹配非临期猪肉）',
+      greenPepperPork?.expiringMatchCount, 1)
 
     const withExpiring = suggestions.filter(r => r.expiringMatchCount > 0).length
     const withoutExpiring = suggestions.filter(r => r.expiringMatchCount === 0 && r.matchCount > 0).length
