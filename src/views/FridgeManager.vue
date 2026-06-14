@@ -169,7 +169,12 @@
         </div>
 
         <div class="recipe-suggestions card">
-          <h2>🍳 今日菜谱建议</h2>
+          <div class="recipe-suggestions-header">
+            <h2>🍳 今日菜谱建议</h2>
+            <button class="btn btn-small btn-regression" @click="handleRunRecipeTests" title="运行菜谱推荐回归测试">
+              🧪 验证推荐
+            </button>
+          </div>
           <div v-if="suggestions.length === 0" class="empty-tip">
             添加食材后为您推荐菜谱
           </div>
@@ -1824,6 +1829,61 @@
       </div>
     </div>
 
+    <div v-if="showRecipeTestDialog" class="regression-dialog-overlay" @click.self="closeRecipeTestDialog">
+      <div class="regression-dialog" :class="recipeTestResult?.allPassed ? 'all-passed' : 'has-failed'">
+        <div class="regression-dialog-header">
+          <h3>🍳 菜谱推荐回归测试报告</h3>
+          <button class="regression-dialog-close" @click="closeRecipeTestDialog">✕</button>
+        </div>
+        <div class="regression-dialog-body" v-if="recipeTestResult">
+          <div class="regression-summary" :class="recipeTestResult.allPassed ? 'success' : 'fail'">
+            <div class="regression-summary-icon">
+              {{ recipeTestResult.allPassed ? '✅' : '⚠️' }}
+            </div>
+            <div class="regression-summary-text">
+              <div class="regression-summary-title">
+                {{ recipeTestResult.allPassed ? '全部通过！' : '存在失败用例' }}
+              </div>
+              <div class="regression-summary-stats">
+                <span class="stat pass">通过 {{ recipeTestResult.passed }}/{{ recipeTestResult.total }}</span>
+                <span v-if="recipeTestResult.failed > 0" class="stat fail">失败 {{ recipeTestResult.failed }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="regression-cases-title">详细用例</div>
+          <div class="regression-cases-list">
+            <div 
+              v-for="(c, idx) in recipeTestResult.cases" 
+              :key="idx" 
+              class="regression-case"
+              :class="c.passed ? 'case-pass' : 'case-fail'"
+            >
+              <div class="case-header">
+                <span class="case-status">{{ c.passed ? '✅' : '❌' }}</span>
+                <span class="case-name">{{ c.name }}</span>
+              </div>
+              <div v-if="!c.passed" class="case-detail">
+                <div class="case-row">
+                  <span class="case-row-label">期望：</span>
+                  <span class="case-value">{{ c.expected }}</span>
+                </div>
+                <div class="case-row">
+                  <span class="case-row-label">实际：</span>
+                  <span class="case-value">{{ c.actual }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="regression-dialog-footer">
+          <button class="btn btn-primary" @click="closeRecipeTestDialog">
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showDisposalDialog" class="disposal-dialog-overlay" @click.self="cancelDisposal">
       <div class="disposal-dialog">
         <div class="disposal-dialog-header">
@@ -1971,7 +2031,7 @@ import { useMealPlanStore } from '@/stores/mealPlan'
 import { usePurchaseCostStore } from '@/stores/purchaseCost'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
 import { useLeftoverStore } from '@/stores/leftover'
-import { getRecipeSuggestions } from '@/utils/recipes'
+import { getRecipeSuggestions, runRecipeSuggestionTests } from '@/utils/recipes'
 import { sendNotification } from '@/utils/storage'
 import { 
   categories, 
@@ -3034,6 +3094,26 @@ function closeRegressionDialog() {
   regressionResult.value = null
 }
 
+const showRecipeTestDialog = ref(false)
+const recipeTestResult = ref(null)
+
+function handleRunRecipeTests() {
+  try {
+    const result = runRecipeSuggestionTests()
+    recipeTestResult.value = result
+    showRecipeTestDialog.value = true
+    console.log('[菜谱推荐回归测试]', result.summary, result.cases)
+  } catch (err) {
+    console.error('[菜谱推荐回归测试] 执行出错：', err)
+    alert('菜谱推荐回归测试执行出错：' + err.message)
+  }
+}
+
+function closeRecipeTestDialog() {
+  showRecipeTestDialog.value = false
+  recipeTestResult.value = null
+}
+
 function addToShoppingList(item) {
   expiringDialogItem.value = item
   
@@ -3646,6 +3726,17 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
 
 .btn-danger:hover {
   background: #ef9a9a;
+}
+
+.recipe-suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.recipe-suggestions-header h2 {
+  margin: 0;
 }
 
 .recipe-suggestions .recipe-list {

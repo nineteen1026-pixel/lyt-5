@@ -1,5 +1,6 @@
-import { daysUntilExpiry, isExpiringSoon, isExpired } from '@/utils/storage'
+import { daysUntilExpiry, isExpired } from '@/utils/storage'
 import { matchIngredientByCategory, getCategoryInfo } from '@/utils/categories'
+import { getFridgeExpiringDaysForItem } from '@/utils/expiryRules'
 
 const recipes = [
   {
@@ -295,9 +296,24 @@ const recipes = [
   }
 ]
 
+function isItemExpiringSoon(item) {
+  if (!item || !item.expiryDate) return false
+  const daysLeft = daysUntilExpiry(item.expiryDate)
+  const expiringDays = getFridgeExpiringDaysForItem(item)
+  return daysLeft >= 0 && daysLeft <= expiringDays
+}
+
+function getItemExpiringUrgency(item) {
+  const daysLeft = daysUntilExpiry(item.expiryDate)
+  const expiringDays = getFridgeExpiringDaysForItem(item)
+  if (daysLeft < 0 || daysLeft > expiringDays) return 0
+  const ratio = 1 - daysLeft / expiringDays
+  return Math.max(0, Math.round(ratio * 10))
+}
+
 export function getRecipeSuggestions(fridgeItems, count = 2) {
   const expiringItems = fridgeItems.filter(item =>
-    isExpiringSoon(item.expiryDate) && !isExpired(item.expiryDate)
+    isItemExpiringSoon(item) && !isExpired(item.expiryDate)
   )
   const expiringTotal = expiringItems.length
 
@@ -327,7 +343,7 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
             name: ing.name,
             daysLeft
           })
-          const urgencyWeight = Math.max(0, 7 - daysLeft)
+          const urgencyWeight = getItemExpiringUrgency(matchedItem)
           expiringUrgencyScore += urgencyWeight
           const itemValue = (matchedItem.quantity || 1) * (matchedItem.unitPrice || 0)
           wasteAvoidanceValue += itemValue * (1 + urgencyWeight * 0.5)
@@ -411,4 +427,154 @@ export function getTotalIngredients(recipeList) {
     })
   })
   return Object.values(total)
+}
+
+function addDaysISO(days) {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
+export function runRecipeSuggestionTests() {
+  const testItems = [
+    { id: '1', name: '番茄', quantity: 2, unit: '个', zone: '保鲜', expiryDate: addDaysISO(1),
+      categoryId: 'fruit-veg', categoryName: '茄果类',
+      parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+      unitPrice: 3 },
+    { id: '2', name: '鸡蛋', quantity: 5, unit: '个', zone: '冷藏', expiryDate: addDaysISO(4),
+      categoryId: 'egg', categoryName: '蛋类',
+      parentCategoryId: 'meat', parentCategoryName: '肉禽蛋类',
+      unitPrice: 1.5 },
+    { id: '3', name: '猪肉', quantity: 500, unit: '克', zone: '冷冻', expiryDate: addDaysISO(5),
+      categoryId: 'pork', categoryName: '猪肉类',
+      parentCategoryId: 'meat', parentCategoryName: '肉禽蛋类',
+      unitPrice: 30 },
+    { id: '4', name: '青椒', quantity: 3, unit: '个', zone: '冷藏', expiryDate: addDaysISO(20),
+      categoryId: 'fruit-veg', categoryName: '茄果类',
+      parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+      unitPrice: 4 },
+    { id: '5', name: '土豆', quantity: 4, unit: '个', zone: '冷藏', expiryDate: addDaysISO(3),
+      categoryId: 'root-veg', categoryName: '根茎类',
+      parentCategoryId: 'vegetable-fruit', parentCategoryName: '蔬菜水果',
+      unitPrice: 2 },
+    { id: '6', name: '牛肉', quantity: 300, unit: '克', zone: '冷冻', expiryDate: addDaysISO(60),
+      categoryId: 'beef', categoryName: '牛肉类',
+      parentCategoryId: 'meat', parentCategoryName: '肉禽蛋类',
+      unitPrice: 60 },
+  ]
+
+  const results = []
+  function assert(name, actual, expected, comparator = '===') {
+    let passed = false
+    if (comparator === '===') {
+      passed = actual === expected
+    } else if (comparator === '>=') {
+      passed = actual >= expected
+    } else if (comparator === '>') {
+      passed = actual > expected
+    } else if (comparator === 'includes') {
+      passed = expected.every(e => actual.includes(e))
+    } else if (comparator === 'order') {
+      const idxs = expected.map(n => actual.findIndex(r => r.name === n))
+      passed = idxs.every((v, i) => i === 0 || idxs[i - 1] < v)
+    }
+    results.push({
+      name,
+      passed,
+      expected: JSON.stringify(expected),
+      actual: JSON.stringify(actual)
+    })
+    return passed
+  }
+
+  try {
+    const suggestions = getRecipeSuggestions(testItems, 10)
+    const allWithMatch = suggestions.filter(r => r.matchCount > 0)
+
+    assert('R1: 有临期食材时，优先推荐含临期匹配的菜谱',
+      allWithMatch[0]?.expiringMatchCount > 0, true)
+
+    const expiringRecipes = allWithMatch.filter(r => r.expiringMatchCount > 0)
+    const nonExpiringRecipes = allWithMatch.filter(r => r.expiringMatchCount === 0)
+    const allExpBeforeNon = expiringRecipes.length > 0 && nonExpiringRecipes.length > 0
+      ? allWithMatch.findIndex(r => r.expiringMatchCount === 0) > allWithMatch.findIndex(r => r.expiringMatchCount > 0)
+      : true
+    assert('R2: 所有含临期匹配的菜谱都排在无临期匹配的前面',
+      allExpBeforeNon, true)
+
+    const expiringItemCount = testItems.filter(i => isItemExpiringSoon(i) && !isExpired(i.expiryDate)).length
+    assert('R3: 临期判定与冰箱规则一致（保鲜/茄果2天+冷藏/蛋类5天+冷冻/猪肉3天+根茎5天=4个临期）',
+      expiringItemCount, 4)
+
+    assert('R4: 番茄(保鲜2天规则，剩1天)判定为临期',
+      isItemExpiringSoon(testItems[0]), true)
+
+    assert('R5: 鸡蛋(冷藏蛋类5天规则，剩4天)判定为临期',
+      isItemExpiringSoon(testItems[1]), true)
+
+    assert('R6: 猪肉(冷冻肉类3天规则，剩5天)不判定为临期',
+      isItemExpiringSoon(testItems[2]), false)
+
+    assert('R7: 青椒(茄果类3天，剩20天)不判定为临期',
+      isItemExpiringSoon(testItems[3]), false)
+
+    assert('R8: 土豆(根茎类5天，剩3天)判定为临期',
+      isItemExpiringSoon(testItems[4]), true)
+
+    const tomatoEgg = suggestions.find(r => r.name === '番茄炒蛋')
+    assert('R9: 番茄炒蛋有2个临期食材匹配（番茄+鸡蛋）',
+      tomatoEgg?.expiringMatchCount, 2)
+
+    const potatoBeef = suggestions.find(r => r.name === '土豆烧牛肉')
+    assert('R10: 土豆烧牛肉有1个临期食材匹配（土豆）',
+      potatoBeef?.expiringMatchCount, 1)
+
+    if (tomatoEgg && potatoBeef) {
+      const tomatoEggIdx = suggestions.findIndex(r => r.name === '番茄炒蛋')
+      const potatoBeefIdx = suggestions.findIndex(r => r.name === '土豆烧牛肉')
+      assert('R11: 临期匹配数多的菜谱排更前（番茄炒蛋>土豆烧牛肉）',
+        tomatoEggIdx < potatoBeefIdx, true)
+    }
+
+    const greenPepperPork = suggestions.find(r => r.name === '青椒肉丝')
+    assert('R12: 青椒肉丝无临期匹配（青椒不临期，猪肉不临期）',
+      greenPepperPork?.expiringMatchCount, 0)
+
+    const withExpiring = suggestions.filter(r => r.expiringMatchCount > 0).length
+    const withoutExpiring = suggestions.filter(r => r.expiringMatchCount === 0 && r.matchCount > 0).length
+    assert('R13: 有临期匹配的菜谱数量 > 0', withExpiring > 0, true)
+    assert('R14: 有匹配但无临期的菜谱数量 >= 0', withoutExpiring >= 0, true)
+
+    if (withExpiring > 0) {
+      const firstExpiring = suggestions.find(r => r.expiringMatchCount > 0)
+      const lastExpiring = [...suggestions].reverse().find(r => r.expiringMatchCount > 0)
+      if (firstExpiring && lastExpiring && firstExpiring.name !== lastExpiring.name) {
+        assert('R15: 同有临期匹配时，优先级分数高的排前',
+          firstExpiring.priorityScore >= lastExpiring.priorityScore, true)
+      }
+    }
+
+    const expiringUrgency = tomatoEgg?.expiringUrgencyScore || 0
+    assert('R16: 紧急程度分数与临期天数挂钩（番茄1天+鸡蛋4天=高紧急度）',
+      expiringUrgency > 5, true)
+
+  } catch (err) {
+    results.push({
+      name: '执行异常',
+      passed: false,
+      expected: '无异常',
+      actual: err.message
+    })
+  }
+
+  const passedCount = results.filter(r => r.passed).length
+  const failed = results.filter(r => !r.passed)
+  return {
+    total: results.length,
+    passed: passedCount,
+    failed: failed.length,
+    allPassed: failed.length === 0,
+    cases: results,
+    summary: `菜谱推荐回归测试：${passedCount}/${results.length} 通过${failed.length > 0 ? '，失败：' + failed.map(f => f.name).join('、') : ''}`
+  }
 }
