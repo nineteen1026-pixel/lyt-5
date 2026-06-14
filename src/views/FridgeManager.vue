@@ -46,12 +46,45 @@
     <div class="main-content">
       <section class="left-section">
         <FridgeInventoryPanel />
-        <FridgeRecipePanel ref="recipePanelRef" />
+        <FridgeRecipePanel />
+        <FridgeShoppingPanel ref="shoppingPanelRef" />
       </section>
 
-      <FridgeChecklistPanel
-        @add-to-shopping-list="handleAddToShoppingList"
-      />
+      <section class="right-section">
+        <div class="right-tabs">
+          <button
+            class="right-tab"
+            :class="{ active: activeRightTab === 'items' }"
+            @click="activeRightTab = 'items'"
+          >
+            📋 食材清单
+          </button>
+          <button
+            class="right-tab"
+            :class="{ active: activeRightTab === 'calendar' }"
+            @click="activeRightTab = 'calendar'"
+          >
+            📅 过期日历
+          </button>
+          <button
+            class="right-tab"
+            :class="{ active: activeRightTab === 'analysis' }"
+            @click="activeRightTab = 'analysis'"
+          >
+            📊 成本分析
+          </button>
+        </div>
+
+        <div v-show="activeRightTab === 'items'" class="tab-content">
+          <FridgeChecklistPanel @add-to-shopping-list="handleAddToShoppingList" />
+        </div>
+        <div v-show="activeRightTab === 'calendar'" class="tab-content">
+          <FridgeCalendarPanel @add-to-shopping-list="handleAddToShoppingList" />
+        </div>
+        <div v-show="activeRightTab === 'analysis'" class="tab-content">
+          <FridgeAnalysisPanel />
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -64,8 +97,11 @@ import { useMealPlanStore } from '@/stores/mealPlan'
 import { useLeftoverStore } from '@/stores/leftover'
 import { matchIngredientByCategory } from '@/utils/categories'
 import FridgeInventoryPanel from '@/components/FridgeInventoryPanel.vue'
-import FridgeChecklistPanel from '@/components/FridgeChecklistPanel.vue'
 import FridgeRecipePanel from '@/components/FridgeRecipePanel.vue'
+import FridgeShoppingPanel from '@/components/FridgeShoppingPanel.vue'
+import FridgeChecklistPanel from '@/components/FridgeChecklistPanel.vue'
+import FridgeCalendarPanel from '@/components/FridgeCalendarPanel.vue'
+import FridgeAnalysisPanel from '@/components/FridgeAnalysisPanel.vue'
 
 const fridgeStore = useFridgeStore()
 const shoppingStore = useShoppingListStore()
@@ -74,7 +110,8 @@ const leftoverStore = useLeftoverStore()
 const switchView = inject('switchView')
 const scrollTarget = inject('scrollTarget')
 
-const recipePanelRef = ref(null)
+const shoppingPanelRef = ref(null)
+const activeRightTab = ref('items')
 
 const missingIngredientRecipesCount = computed(() => {
   let count = 0
@@ -102,8 +139,9 @@ const missingIngredientRecipesCount = computed(() => {
 
 function goToExpiringItems() {
   fridgeStore.setFilterState({ activeZone: '全部', expiryStatus: 'expiring' })
+  activeRightTab.value = 'items'
   nextTick(() => {
-    const itemsListEl = document.querySelector('.items-list')
+    const itemsListEl = document.querySelector('.advanced-filter')
     if (itemsListEl) {
       itemsListEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
@@ -132,8 +170,8 @@ function goToLeftoverItems() {
 }
 
 function handleAddToShoppingList(item) {
-  if (recipePanelRef.value) {
-    recipePanelRef.value.addToShoppingList(item)
+  if (shoppingPanelRef.value) {
+    shoppingPanelRef.value.addToShoppingList(item)
   }
 }
 
@@ -349,6 +387,49 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.right-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.right-tabs {
+  display: flex;
+  gap: 4px;
+  background: white;
+  padding: 6px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.right-tab {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #546e7a;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.right-tab:hover {
+  background: #eceff1;
+  color: #37474f;
+}
+
+.right-tab.active {
+  background: linear-gradient(135deg, #00897b, #26a69a);
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 137, 123, 0.3);
+}
+
+.tab-content {
+  flex: 1;
 }
 
 @media (max-width: 900px) {
