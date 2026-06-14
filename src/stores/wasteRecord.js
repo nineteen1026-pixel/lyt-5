@@ -51,6 +51,7 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       quantity: itemData.quantity,
       unit: itemData.unit,
       zone: itemData.zone,
+      store: itemData.store || '',
       reason: itemData.reason || 'discarded',
       disposalNote: itemData.disposalNote || '',
       expiryDate: itemData.expiryDate,
@@ -171,6 +172,251 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       .sort((a, b) => a.month.localeCompare(b.month))
   }
 
+  function getMonthBefore(month) {
+    const [y, m] = month.split('-').map(Number)
+    const date = new Date(y, m - 2, 1)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  function getMonthlyWasteAnalysis(month, filters = {}) {
+    let filtered = records.value.filter(r => r.month === month)
+    const prevMonth = getMonthBefore(month)
+    let prevFiltered = records.value.filter(r => r.month === prevMonth)
+
+    if (filters.category && filters.category !== '全部') {
+      filtered = filtered.filter(r => r.parentCategoryName === filters.category)
+      prevFiltered = prevFiltered.filter(r => r.parentCategoryName === filters.category)
+    }
+    if (filters.zone && filters.zone !== '全部') {
+      filtered = filtered.filter(r => r.zone === filters.zone)
+      prevFiltered = prevFiltered.filter(r => r.zone === filters.zone)
+    }
+    if (filters.store && filters.store !== '全部') {
+      filtered = filtered.filter(r => r.store === filters.store)
+      prevFiltered = prevFiltered.filter(r => r.store === filters.store)
+    }
+
+    const wasteRecords = filtered.filter(r => getDisposalReasonInfo(r.reason).isWaste)
+    const naturalConsumption = filtered.filter(r => r.reason === 'natural_consumption')
+
+    const totalWasteCount = wasteRecords.length
+    const totalWasteQty = wasteRecords.reduce((sum, r) => sum + r.quantity, 0)
+    const naturalConsumptionCount = naturalConsumption.length
+    const naturalConsumptionQty = naturalConsumption.reduce((sum, r) => sum + r.quantity, 0)
+    const totalCount = filtered.length
+    const totalQty = filtered.reduce((sum, r) => sum + r.quantity, 0)
+
+    const prevWasteRecords = prevFiltered.filter(r => getDisposalReasonInfo(r.reason).isWaste)
+    const prevNatural = prevFiltered.filter(r => r.reason === 'natural_consumption')
+    const prevWasteQty = prevWasteRecords.reduce((sum, r) => sum + r.quantity, 0)
+    const prevNaturalQty = prevNatural.reduce((sum, r) => sum + r.quantity, 0)
+
+    const wasteChange = prevWasteQty > 0
+      ? Math.round(((totalWasteQty - prevWasteQty) / prevWasteQty) * 100)
+      : (totalWasteQty > 0 ? 100 : 0)
+    const consumptionChange = prevNaturalQty > 0
+      ? Math.round(((naturalConsumptionQty - prevNaturalQty) / prevNaturalQty) * 100)
+      : (naturalConsumptionQty > 0 ? 100 : 0)
+
+    const utilizationRate = totalQty > 0
+      ? Math.round((naturalConsumptionQty / totalQty) * 100)
+      : 0
+    const prevTotalQty = prevFiltered.reduce((sum, r) => sum + r.quantity, 0)
+    const prevUtilization = prevTotalQty > 0
+      ? Math.round((prevNaturalQty / prevTotalQty) * 100)
+      : 0
+    const utilizationChange = utilizationRate - prevUtilization
+
+    return {
+      month,
+      totalCount,
+      totalQty,
+      totalWasteCount,
+      totalWasteQty,
+      naturalConsumptionCount,
+      naturalConsumptionQty,
+      utilizationRate,
+      prevWasteQty,
+      prevNaturalQty,
+      prevUtilization,
+      wasteChange,
+      consumptionChange,
+      utilizationChange,
+      byReason: getReasonBreakdown(filtered),
+      byWasteType: getWasteTypeBreakdown(wasteRecords)
+    }
+  }
+
+  function getReasonBreakdown(filtered) {
+    const result = {}
+    Object.keys(DISPOSAL_REASONS).forEach(reason => {
+      const items = filtered.filter(r => r.reason === reason)
+      result[reason] = {
+        count: items.length,
+        quantity: items.reduce((sum, r) => sum + r.quantity, 0),
+        label: DISPOSAL_REASONS[reason].label,
+        icon: DISPOSAL_REASONS[reason].icon,
+        isWaste: DISPOSAL_REASONS[reason].isWaste
+      }
+    })
+    return result
+  }
+
+  function getWasteTypeBreakdown(wasteRecords) {
+    return {
+      expired: {
+        count: wasteRecords.filter(r => r.reason === 'expired').length,
+        quantity: wasteRecords.filter(r => r.reason === 'expired').reduce((sum, r) => sum + r.quantity, 0)
+      },
+      spoiled: {
+        count: wasteRecords.filter(r => r.reason === 'spoiled').length,
+        quantity: wasteRecords.filter(r => r.reason === 'spoiled').reduce((sum, r) => sum + r.quantity, 0)
+      },
+      discarded: {
+        count: wasteRecords.filter(r => r.reason === 'discarded').length,
+        quantity: wasteRecords.filter(r => r.reason === 'discarded').reduce((sum, r) => sum + r.quantity, 0)
+      },
+      other: {
+        count: wasteRecords.filter(r => r.reason === 'other').length,
+        quantity: wasteRecords.filter(r => r.reason === 'other').reduce((sum, r) => sum + r.quantity, 0)
+      }
+    }
+  }
+
+  function getWasteDimensionAnalysis(month, dimension, filters = {}) {
+    let filtered = records.value.filter(r => r.month === month)
+    const prevMonth = getMonthBefore(month)
+    let prevFiltered = records.value.filter(r => r.month === prevMonth)
+
+    if (filters.category && filters.category !== '全部' && dimension !== 'category') {
+      filtered = filtered.filter(r => r.parentCategoryName === filters.category)
+      prevFiltered = prevFiltered.filter(r => r.parentCategoryName === filters.category)
+    }
+    if (filters.zone && filters.zone !== '全部' && dimension !== 'zone') {
+      filtered = filtered.filter(r => r.zone === filters.zone)
+      prevFiltered = prevFiltered.filter(r => r.zone === filters.zone)
+    }
+    if (filters.store && filters.store !== '全部' && dimension !== 'store') {
+      filtered = filtered.filter(r => r.store === filters.store)
+      prevFiltered = prevFiltered.filter(r => r.store === filters.store)
+    }
+
+    const dimensionKey = dimension === 'category' ? 'parentCategoryName' : dimension
+    const currentByDim = {}
+    const prevByDim = {}
+
+    filtered.forEach(r => {
+      const key = r[dimensionKey] || '未分类'
+      const isWaste = getDisposalReasonInfo(r.reason).isWaste
+      if (!currentByDim[key]) {
+        currentByDim[key] = {
+          totalCount: 0,
+          totalQty: 0,
+          wasteCount: 0,
+          wasteQty: 0,
+          consumptionCount: 0,
+          consumptionQty: 0
+        }
+      }
+      currentByDim[key].totalCount++
+      currentByDim[key].totalQty += r.quantity
+      if (isWaste) {
+        currentByDim[key].wasteCount++
+        currentByDim[key].wasteQty += r.quantity
+      } else {
+        currentByDim[key].consumptionCount++
+        currentByDim[key].consumptionQty += r.quantity
+      }
+    })
+
+    prevFiltered.forEach(r => {
+      const key = r[dimensionKey] || '未分类'
+      const isWaste = getDisposalReasonInfo(r.reason).isWaste
+      if (!prevByDim[key]) {
+        prevByDim[key] = { wasteQty: 0, consumptionQty: 0, totalQty: 0 }
+      }
+      prevByDim[key].totalQty += r.quantity
+      if (isWaste) {
+        prevByDim[key].wasteQty += r.quantity
+      } else {
+        prevByDim[key].consumptionQty += r.quantity
+      }
+    })
+
+    const allKeys = new Set([...Object.keys(currentByDim), ...Object.keys(prevByDim)])
+    const result = Array.from(allKeys).map(key => {
+      const current = currentByDim[key] || {
+        totalCount: 0, totalQty: 0, wasteCount: 0, wasteQty: 0, consumptionCount: 0, consumptionQty: 0
+      }
+      const prev = prevByDim[key] || { wasteQty: 0, consumptionQty: 0, totalQty: 0 }
+
+      const utilizationRate = current.totalQty > 0
+        ? Math.round((current.consumptionQty / current.totalQty) * 100)
+        : 0
+      const wasteRate = current.totalQty > 0
+        ? Math.round((current.wasteQty / current.totalQty) * 100)
+        : 0
+
+      const wasteChange = prev.wasteQty > 0
+        ? Math.round(((current.wasteQty - prev.wasteQty) / prev.wasteQty) * 100)
+        : (current.wasteQty > 0 ? 100 : 0)
+      const consumptionChange = prev.consumptionQty > 0
+        ? Math.round(((current.consumptionQty - prev.consumptionQty) / prev.consumptionQty) * 100)
+        : (current.consumptionQty > 0 ? 100 : 0)
+
+      return {
+        name: key,
+        totalCount: current.totalCount,
+        totalQty: current.totalQty,
+        wasteCount: current.wasteCount,
+        wasteQty: current.wasteQty,
+        consumptionCount: current.consumptionCount,
+        consumptionQty: current.consumptionQty,
+        utilizationRate,
+        wasteRate,
+        prevWasteQty: prev.wasteQty,
+        prevConsumptionQty: prev.consumptionQty,
+        wasteChange,
+        consumptionChange
+      }
+    }).sort((a, b) => b.wasteQty - a.wasteQty)
+
+    return result
+  }
+
+  function getWasteTrendWithFilters(filters = {}) {
+    const trend = {}
+    records.value.forEach(r => {
+      if (filters.category && filters.category !== '全部' && r.parentCategoryName !== filters.category) return
+      if (filters.zone && filters.zone !== '全部' && r.zone !== filters.zone) return
+      if (filters.store && filters.store !== '全部' && r.store !== filters.store) return
+
+      const isWaste = getDisposalReasonInfo(r.reason).isWaste
+      if (!trend[r.month]) {
+        trend[r.month] = {
+          total: 0,
+          waste: 0,
+          consumption: 0,
+          totalQty: 0,
+          wasteQty: 0,
+          consumptionQty: 0
+        }
+      }
+      trend[r.month].total++
+      trend[r.month].totalQty += r.quantity
+      if (isWaste) {
+        trend[r.month].waste++
+        trend[r.month].wasteQty += r.quantity
+      } else {
+        trend[r.month].consumption++
+        trend[r.month].consumptionQty += r.quantity
+      }
+    })
+    return Object.entries(trend)
+      .map(([month, data]) => ({ month, ...data }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+  }
+
   watch(
     records,
     (newRecords) => {
@@ -186,6 +432,9 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
     addRecord,
     getMonthlySummary,
     getWasteTrend,
+    getMonthlyWasteAnalysis,
+    getWasteDimensionAnalysis,
+    getWasteTrendWithFilters,
     getDisposalReasonInfo
   }
 })

@@ -66,6 +66,7 @@ export const usePurchaseCostStore = defineStore('purchaseCost', () => {
       unitPrice: itemData.unitPrice || 0,
       totalCost: (itemData.quantity || 0) * (itemData.unitPrice || 0),
       store: itemData.store || '',
+      zone: itemData.zone || '',
       categoryId: itemData.categoryId || categoryInfo.categoryId,
       categoryName: itemData.categoryName || categoryInfo.categoryName,
       parentCategoryId: itemData.parentCategoryId || categoryInfo.parentCategoryId,
@@ -236,6 +237,156 @@ export const usePurchaseCostStore = defineStore('purchaseCost', () => {
     return correlation.sort((a, b) => b.totalCost - a.totalCost)
   }
 
+  function getMonthBefore(month) {
+    const [y, m] = month.split('-').map(Number)
+    const date = new Date(y, m - 2, 1)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  function getMonthlyAnalysis(month, filters = {}) {
+    let monthCosts = costRecords.value.filter(r => r.month === month)
+    let prevMonth = getMonthBefore(month)
+    let prevMonthCosts = costRecords.value.filter(r => r.month === prevMonth)
+
+    if (filters.category && filters.category !== '全部') {
+      monthCosts = monthCosts.filter(r => r.parentCategoryName === filters.category)
+      prevMonthCosts = prevMonthCosts.filter(r => r.parentCategoryName === filters.category)
+    }
+    if (filters.zone && filters.zone !== '全部') {
+      monthCosts = monthCosts.filter(r => r.zone === filters.zone)
+      prevMonthCosts = prevMonthCosts.filter(r => r.zone === filters.zone)
+    }
+    if (filters.store && filters.store !== '全部') {
+      monthCosts = monthCosts.filter(r => r.store === filters.store)
+      prevMonthCosts = prevMonthCosts.filter(r => r.store === filters.store)
+    }
+
+    const currentTotal = monthCosts.reduce((sum, r) => sum + r.totalCost, 0)
+    const currentCount = monthCosts.length
+    const prevTotal = prevMonthCosts.reduce((sum, r) => sum + r.totalCost, 0)
+
+    const totalCostChange = prevTotal > 0
+      ? Math.round(((currentTotal - prevTotal) / prevTotal) * 100)
+      : (currentTotal > 0 ? 100 : 0)
+
+    const totalCountChange = prevMonthCosts.length > 0
+      ? Math.round(((currentCount - prevMonthCosts.length) / prevMonthCosts.length) * 100)
+      : (currentCount > 0 ? 100 : 0)
+
+    return {
+      month,
+      totalCost: currentTotal,
+      totalCount: currentCount,
+      prevTotal,
+      prevCount: prevMonthCosts.length,
+      totalCostChange,
+      totalCountChange
+    }
+  }
+
+  function getDimensionAnalysis(month, dimension, filters = {}) {
+    let monthCosts = costRecords.value.filter(r => r.month === month)
+    let prevMonth = getMonthBefore(month)
+    let prevMonthCosts = costRecords.value.filter(r => r.month === prevMonth)
+
+    if (filters.category && filters.category !== '全部' && dimension !== 'category') {
+      monthCosts = monthCosts.filter(r => r.parentCategoryName === filters.category)
+      prevMonthCosts = prevMonthCosts.filter(r => r.parentCategoryName === filters.category)
+    }
+    if (filters.zone && filters.zone !== '全部' && dimension !== 'zone') {
+      monthCosts = monthCosts.filter(r => r.zone === filters.zone)
+      prevMonthCosts = prevMonthCosts.filter(r => r.zone === filters.zone)
+    }
+    if (filters.store && filters.store !== '全部' && dimension !== 'store') {
+      monthCosts = monthCosts.filter(r => r.store === filters.store)
+      prevMonthCosts = prevMonthCosts.filter(r => r.store === filters.store)
+    }
+
+    const dimensionKey = dimension === 'category' ? 'parentCategoryName' : dimension
+    const currentByDim = {}
+    const prevByDim = {}
+
+    monthCosts.forEach(r => {
+      const key = r[dimensionKey] || '未分类'
+      if (!currentByDim[key]) {
+        currentByDim[key] = { totalCost: 0, count: 0, quantity: 0 }
+      }
+      currentByDim[key].totalCost += r.totalCost
+      currentByDim[key].count++
+      currentByDim[key].quantity += r.quantity
+    })
+
+    prevMonthCosts.forEach(r => {
+      const key = r[dimensionKey] || '未分类'
+      if (!prevByDim[key]) {
+        prevByDim[key] = { totalCost: 0, count: 0 }
+      }
+      prevByDim[key].totalCost += r.totalCost
+      prevByDim[key].count++
+    })
+
+    const allKeys = new Set([...Object.keys(currentByDim), ...Object.keys(prevByDim)])
+    const totalCurrentCost = Object.values(currentByDim).reduce((sum, d) => sum + d.totalCost, 0)
+
+    const result = Array.from(allKeys).map(key => {
+      const current = currentByDim[key] || { totalCost: 0, count: 0, quantity: 0 }
+      const prev = prevByDim[key] || { totalCost: 0, count: 0 }
+      const costChange = prev.totalCost > 0
+        ? Math.round(((current.totalCost - prev.totalCost) / prev.totalCost) * 100)
+        : (current.totalCost > 0 ? 100 : 0)
+      const percent = totalCurrentCost > 0 ? Math.round((current.totalCost / totalCurrentCost) * 100) : 0
+
+      return {
+        name: key,
+        totalCost: current.totalCost,
+        count: current.count,
+        quantity: current.quantity,
+        prevTotalCost: prev.totalCost,
+        prevCount: prev.count,
+        costChange,
+        percent
+      }
+    }).sort((a, b) => b.totalCost - a.totalCost)
+
+    return result
+  }
+
+  function getAvailableFilters() {
+    const categories = new Set()
+    const zones = new Set()
+    const stores = new Set()
+
+    costRecords.value.forEach(r => {
+      if (r.parentCategoryName) categories.add(r.parentCategoryName)
+      if (r.zone) zones.add(r.zone)
+      if (r.store) stores.add(r.store)
+    })
+
+    return {
+      categories: Array.from(categories).sort(),
+      zones: Array.from(zones).sort(),
+      stores: Array.from(stores).sort()
+    }
+  }
+
+  function getCostTrendWithDimensions(filters = {}) {
+    const trend = {}
+    costRecords.value.forEach(r => {
+      if (filters.category && filters.category !== '全部' && r.parentCategoryName !== filters.category) return
+      if (filters.zone && filters.zone !== '全部' && r.zone !== filters.zone) return
+      if (filters.store && filters.store !== '全部' && r.store !== filters.store) return
+
+      if (!trend[r.month]) {
+        trend[r.month] = { totalCost: 0, count: 0 }
+      }
+      trend[r.month].totalCost += r.totalCost
+      trend[r.month].count++
+    })
+    return Object.entries(trend)
+      .map(([month, data]) => ({ month, ...data }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+  }
+
   function replaceAllCostRecords(newRecords) {
     costRecords.value = []
     newRecords.forEach(r => {
@@ -247,6 +398,7 @@ export const usePurchaseCostStore = defineStore('purchaseCost', () => {
         unitPrice: r.unitPrice || 0,
         totalCost: r.totalCost || (r.quantity || 0) * (r.unitPrice || 0),
         store: r.store || '',
+        zone: r.zone || '',
         categoryId: r.categoryId || '',
         categoryName: r.categoryName || '',
         parentCategoryId: r.parentCategoryId || '',
@@ -283,6 +435,10 @@ export const usePurchaseCostStore = defineStore('purchaseCost', () => {
     getMonthlyCostSummary,
     getCostTrend,
     getCorrelationAnalysis,
+    getMonthlyAnalysis,
+    getDimensionAnalysis,
+    getAvailableFilters,
+    getCostTrendWithDimensions,
     replaceAllCostRecords,
     addCostRecordsBulk
   }
