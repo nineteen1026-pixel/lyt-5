@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import {
   generateId,
   daysUntilExpiry,
@@ -15,9 +15,17 @@ import {
 import { getCategoryInfo } from '@/utils/categories'
 import { useWasteRecordStore } from '@/stores/wasteRecord'
 import { usePurchaseCostStore } from '@/stores/purchaseCost'
+import {
+  getLeftoverRules,
+  getLeftoverExpiringDaysForItem,
+  updateLeftoverDefaultDays,
+  updateLeftoverZoneRule,
+  updateLeftoverCategoryRule,
+  resetLeftoverRules,
+  LEFTOVER_ZONES
+} from '@/utils/expiryRules'
 
 const LEFTOVER_STORAGE_KEY = 'leftover_items'
-const LEFTOVER_EXPIRING_DAYS_KEY = 'leftover_expiring_rule'
 const LEFTOVER_NOTIFICATION_ENABLED_KEY = 'leftover_notification_enabled'
 const LEFTOVER_NOTIFICATION_DAYS_KEY = 'leftover_notification_days'
 const LEFTOVER_NOTIFIED_KEY = 'leftover_notified_items'
@@ -36,23 +44,6 @@ function setStoredLeftoverItems(items) {
     localStorage.setItem(LEFTOVER_STORAGE_KEY, JSON.stringify(items))
   } catch {
     console.error('Failed to save leftover items to localStorage')
-  }
-}
-
-function getStoredLeftoverExpiringDays() {
-  try {
-    const data = localStorage.getItem(LEFTOVER_EXPIRING_DAYS_KEY)
-    return data ? parseInt(data, 10) : 1
-  } catch {
-    return 1
-  }
-}
-
-function setStoredLeftoverExpiringDays(days) {
-  try {
-    localStorage.setItem(LEFTOVER_EXPIRING_DAYS_KEY, days.toString())
-  } catch {
-    console.error('Failed to save leftover expiring days to localStorage')
   }
 }
 
@@ -139,14 +130,16 @@ function calcExpiryDate(openDate, storageDays) {
 
 export const useLeftoverStore = defineStore('leftover', () => {
   const items = ref(getStoredLeftoverItems())
-  const expiringDays = ref(getStoredLeftoverExpiringDays())
+  const expiryRules = reactive(getLeftoverRules())
   const notificationEnabled = ref(getStoredLeftoverNotificationEnabled())
   const notificationDays = ref(getStoredLeftoverNotificationDays())
   const notificationPermission = ref(
     'Notification' in window ? Notification.permission : 'unsupported'
   )
 
-  const storageZones = ['冷藏', '冷冻']
+  const storageZones = LEFTOVER_ZONES
+
+  const expiringDays = computed(() => expiryRules.defaultDays)
 
   const defaultStorageDays = {
     '叶菜类': 1,
@@ -198,7 +191,7 @@ export const useLeftoverStore = defineStore('leftover', () => {
 
   const expiringSoonItems = computed(() => {
     return items.value.filter(item =>
-      isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+      isExpiringSoonItem(item) && !isExpired(item.expiryDate)
     )
   })
 
@@ -246,15 +239,43 @@ export const useLeftoverStore = defineStore('leftover', () => {
     return 2
   }
 
-  function isExpiringSoonItem(expiryDate) {
-    return isExpiringSoon(expiryDate, expiringDays.value)
+  function getExpiringDaysForItem(item) {
+    return getLeftoverExpiringDaysForItem(item)
+  }
+
+  function isExpiringSoonItem(item) {
+    if (!item || !item.expiryDate) return false
+    const days = getExpiringDaysForItem(item)
+    return isExpiringSoon(item.expiryDate, days)
   }
 
   function setExpiringDays(days) {
     const value = parseInt(days, 10)
     if (!isNaN(value) && value >= 1) {
-      expiringDays.value = value
+      const updatedRules = updateLeftoverDefaultDays(value)
+      Object.assign(expiryRules, updatedRules)
     }
+  }
+
+  function setZoneExpiringDays(zone, days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      const updatedRules = updateLeftoverZoneRule(zone, value)
+      Object.assign(expiryRules, updatedRules)
+    }
+  }
+
+  function setCategoryExpiringDays(categoryId, days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      const updatedRules = updateLeftoverCategoryRule(categoryId, value)
+      Object.assign(expiryRules, updatedRules)
+    }
+  }
+
+  function resetExpiryRules() {
+    const defaultRules = resetLeftoverRules()
+    Object.assign(expiryRules, defaultRules)
   }
 
   async function enableNotification() {
@@ -472,13 +493,6 @@ export const useLeftoverStore = defineStore('leftover', () => {
   )
 
   watch(
-    expiringDays,
-    (newDays) => {
-      setStoredLeftoverExpiringDays(newDays)
-    }
-  )
-
-  watch(
     notificationEnabled,
     (newVal) => {
       setStoredLeftoverNotificationEnabled(newVal)
@@ -496,6 +510,7 @@ export const useLeftoverStore = defineStore('leftover', () => {
     items,
     storageZones,
     expiringDays,
+    expiryRules,
     notificationEnabled,
     notificationDays,
     notificationPermission,
@@ -508,8 +523,12 @@ export const useLeftoverStore = defineStore('leftover', () => {
     itemsBySource,
     defaultStorageDays,
     getDefaultStorageDays,
+    getExpiringDaysForItem,
     isExpiringSoonItem,
     setExpiringDays,
+    setZoneExpiringDays,
+    setCategoryExpiringDays,
+    resetExpiryRules,
     enableNotification,
     disableNotification,
     setNotificationDays,

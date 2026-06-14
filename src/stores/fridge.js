@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import { 
   getStoredItems, setStoredItems, generateId, daysUntilExpiry, isExpiringSoon, isExpired,
   hasBeenNotified, markAsNotified, clearNotifiedItems,
@@ -16,27 +16,20 @@ import {
   getAllSubCategories,
   getSubCategoryById
 } from '@/utils/categories'
+import {
+  getFridgeRules,
+  setFridgeRules,
+  getFridgeExpiringDaysForItem,
+  getExpiringDaysForItem,
+  updateFridgeDefaultDays,
+  updateFridgeZoneRule,
+  updateFridgeCategoryRule,
+  resetFridgeRules,
+  FRIDGE_ZONES
+} from '@/utils/expiryRules'
 
-const EXPIRING_DAYS_KEY = 'expiring_rule'
 const NOTIFICATION_ENABLED_KEY = 'notification_enabled'
 const NOTIFICATION_DAYS_KEY = 'notification_days'
-
-function getStoredExpiringDays() {
-  try {
-    const data = localStorage.getItem(EXPIRING_DAYS_KEY)
-    return data ? parseInt(data, 10) : 3
-  } catch {
-    return 3
-  }
-}
-
-function setStoredExpiringDays(days) {
-  try {
-    localStorage.setItem(EXPIRING_DAYS_KEY, days.toString())
-  } catch {
-    console.error('Failed to save expiring days to localStorage')
-  }
-}
 
 function getStoredNotificationEnabled() {
   try {
@@ -74,14 +67,16 @@ function setStoredNotificationDays(days) {
 
 export const useFridgeStore = defineStore('fridge', () => {
   const items = ref(getStoredItems())
-  const expiringDays = ref(getStoredExpiringDays())
+  const expiryRules = reactive(getFridgeRules())
   const notificationEnabled = ref(getStoredNotificationEnabled())
   const notificationDays = ref(getStoredNotificationDays())
   const notificationPermission = ref(
     'Notification' in window ? Notification.permission : 'unsupported'
   )
 
-  const zones = ['冷藏', '冷冻', '保鲜', '门架']
+  const zones = FRIDGE_ZONES
+
+  const expiringDays = computed(() => expiryRules.defaultDays)
 
   const filterState = ref({
     searchKeyword: '',
@@ -226,12 +221,12 @@ export const useFridgeStore = defineStore('fridge', () => {
           break
         case 'expiring':
           result = result.filter(item => 
-            isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+            isExpiringSoonItem(item) && !isExpired(item.expiryDate)
           )
           break
         case 'normal':
           result = result.filter(item => 
-            !isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+            !isExpiringSoonItem(item) && !isExpired(item.expiryDate)
           )
           break
       }
@@ -321,7 +316,7 @@ export const useFridgeStore = defineStore('fridge', () => {
 
   const expiringSoonItems = computed(() => {
     return items.value.filter(item => 
-      isExpiringSoon(item.expiryDate, expiringDays.value) && !isExpired(item.expiryDate)
+      isExpiringSoonItem(item) && !isExpired(item.expiryDate)
     )
   })
 
@@ -341,12 +336,40 @@ export const useFridgeStore = defineStore('fridge', () => {
   function setExpiringDays(days) {
     const value = parseInt(days, 10)
     if (!isNaN(value) && value >= 1) {
-      expiringDays.value = value
+      const updatedRules = updateFridgeDefaultDays(value)
+      Object.assign(expiryRules, updatedRules)
     }
   }
 
-  function isExpiringSoonItem(expiryDate) {
-    return isExpiringSoon(expiryDate, expiringDays.value)
+  function getExpiringDaysForItem(item) {
+    return getFridgeExpiringDaysForItem(item)
+  }
+
+  function isExpiringSoonItem(item) {
+    if (!item || !item.expiryDate) return false
+    const days = getExpiringDaysForItem(item)
+    return isExpiringSoon(item.expiryDate, days)
+  }
+
+  function setZoneExpiringDays(zone, days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      const updatedRules = updateFridgeZoneRule(zone, value)
+      Object.assign(expiryRules, updatedRules)
+    }
+  }
+
+  function setCategoryExpiringDays(categoryId, days) {
+    const value = parseInt(days, 10)
+    if (!isNaN(value) && value >= 1) {
+      const updatedRules = updateFridgeCategoryRule(categoryId, value)
+      Object.assign(expiryRules, updatedRules)
+    }
+  }
+
+  function resetExpiryRules() {
+    const defaultRules = resetFridgeRules()
+    Object.assign(expiryRules, defaultRules)
   }
 
   async function enableNotification() {
@@ -576,13 +599,6 @@ export const useFridgeStore = defineStore('fridge', () => {
   )
 
   watch(
-    expiringDays,
-    (newDays) => {
-      setStoredExpiringDays(newDays)
-    }
-  )
-
-  watch(
     notificationEnabled,
     (newVal) => {
       setStoredNotificationEnabled(newVal)
@@ -795,6 +811,7 @@ export const useFridgeStore = defineStore('fridge', () => {
     items,
     zones,
     expiringDays,
+    expiryRules,
     notificationEnabled,
     notificationDays,
     notificationPermission,
@@ -829,7 +846,11 @@ export const useFridgeStore = defineStore('fridge', () => {
     getItemById,
     discardItem,
     setExpiringDays,
+    getExpiringDaysForItem,
     isExpiringSoonItem,
+    setZoneExpiringDays,
+    setCategoryExpiringDays,
+    resetExpiryRules,
     enableNotification,
     disableNotification,
     setNotificationDays,

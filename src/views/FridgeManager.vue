@@ -895,7 +895,7 @@
               :key="item.id"
               class="item-card"
               :class="{
-                'expiring-soon': fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate),
+                'expiring-soon': fridgeStore.isExpiringSoonItem(item) && !fridgeStore.isExpired(item.expiryDate),
                 'expired': fridgeStore.isExpired(item.expiryDate),
                 'selected': selectedItemIds.has(item.id)
               }"
@@ -933,7 +933,7 @@
                   <span v-if="fridgeStore.isExpired(item.expiryDate)" class="badge expired">
                     已过期
                   </span>
-                  <span v-else-if="fridgeStore.isExpiringSoon(item.expiryDate)" class="badge warning">
+                  <span v-else-if="fridgeStore.isExpiringSoonItem(item)" class="badge warning">
                     还剩 {{ fridgeStore.daysUntilExpiry(item.expiryDate) }} 天
                   </span>
                   <span v-else class="badge normal">
@@ -943,9 +943,9 @@
               </div>
               <div class="item-actions">
                 <button
-                  v-if="fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate)"
-                  class="btn btn-small btn-shopping"
-                  @click="addToShoppingList(item)"
+                  v-if="fridgeStore.isExpiringSoonItem(item) && !fridgeStore.isExpired(item.expiryDate)"
+                    class="btn btn-small btn-shopping"
+                    @click="addToShoppingList(item)"
                 >
                   🛒 补货
                 </button>
@@ -1381,17 +1381,19 @@
           </div>
 
           <div class="settings-section">
-            <h4>⏰ 临期补货规则</h4>
+            <h4>⏰ 临期预警规则</h4>
             <div class="form-group">
-              <label>临期提醒天数</label>
-              <select v-model.number="settingsForm.expiringDays" @change="handleExpiringDaysChange">
-                <option :value="1">1 天</option>
-                <option :value="2">2 天</option>
-                <option :value="3">3 天</option>
-                <option :value="5">5 天</option>
-                <option :value="7">7 天</option>
-                <option :value="10">10 天</option>
-              </select>
+              <label>临期预警天数配置</label>
+              <div class="expiry-rules-entry">
+                <span class="expiry-rules-summary">
+                  默认 {{ fridgeStore.expiringDays }} 天
+                  <span class="expiry-rules-detail">
+                    （分区 {{ Object.keys(fridgeStore.expiryRules.zoneRules).length }} 项，
+                    品类 {{ Object.keys(fridgeStore.expiryRules.categoryRules).length }} 项）
+                  </span>
+                </span>
+                <button class="btn btn-small btn-primary" @click="openExpiryRulesDialog">⚙️ 详细配置</button>
+              </div>
             </div>
             <div class="form-group">
               <label>默认门店</label>
@@ -1524,6 +1526,91 @@
         </div>
         <div class="settings-dialog-footer">
           <button class="btn btn-primary" @click="closeSettings">完成</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showExpiryRulesDialog" class="expiry-rules-dialog-overlay" @click.self="closeExpiryRulesDialog">
+      <div class="expiry-rules-dialog">
+        <div class="expiry-rules-dialog-header">
+          <h3>⏰ 临期预警规则配置</h3>
+          <button class="expiry-rules-dialog-close" @click="closeExpiryRulesDialog">✕</button>
+        </div>
+        <div class="expiry-rules-dialog-body">
+          <div class="expiry-rules-section">
+            <h4>📐 默认预警天数</h4>
+            <p class="expiry-rules-hint">当食材没有匹配的分区或品类规则时，使用此默认值</p>
+            <div class="expiry-rules-row">
+              <label>默认天数</label>
+              <select v-model.number="expiryRulesForm.defaultDays" @change="handleExpiryDefaultDaysChange">
+                <option :value="1">1 天</option>
+                <option :value="2">2 天</option>
+                <option :value="3">3 天</option>
+                <option :value="5">5 天</option>
+                <option :value="7">7 天</option>
+                <option :value="10">10 天</option>
+                <option :value="14">14 天</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="expiry-rules-section">
+            <h4>📍 按分区配置</h4>
+            <p class="expiry-rules-hint">不同冰箱分区的食材，临期预警天数可以不同（如冷冻区食材保质期较长，预警天数可更大）</p>
+            <div
+              v-for="zone in fridgeStore.zones"
+              :key="zone"
+              class="expiry-rules-row"
+            >
+              <label>{{ zone }}</label>
+              <div class="expiry-rules-input-group">
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  :value="fridgeStore.expiryRules.zoneRules[zone] || fridgeStore.expiryRules.defaultDays"
+                  @change="handleExpiryZoneRuleChange(zone, $event)"
+                />
+                <span class="expiry-rules-unit">天</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="expiry-rules-section">
+            <h4>📦 按品类配置</h4>
+            <p class="expiry-rules-hint">不同品类的食材，临期预警天数可以不同（如叶菜类易坏预警天数可更小）</p>
+            <div
+              v-for="group in categories"
+              :key="group.id"
+              class="expiry-rules-category-group"
+            >
+              <div class="expiry-rules-category-group-title">{{ group.name }}</div>
+              <div
+                v-for="sub in group.children"
+                :key="sub.id"
+                class="expiry-rules-row"
+              >
+                <label>
+                  <span class="expiry-rules-cat-icon">{{ sub.icon }}</span>
+                  {{ sub.name }}
+                </label>
+                <div class="expiry-rules-input-group">
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    :value="fridgeStore.expiryRules.categoryRules[sub.id] || fridgeStore.expiryRules.defaultDays"
+                    @change="handleExpiryCategoryRuleChange(sub.id, $event)"
+                  />
+                  <span class="expiry-rules-unit">天</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="expiry-rules-dialog-footer">
+          <button class="btn btn-small btn-danger" @click="handleResetExpiryRules">🔄 恢复默认</button>
+          <button class="btn btn-primary" @click="closeExpiryRulesDialog">完成</button>
         </div>
       </div>
     </div>
@@ -1753,7 +1840,7 @@
                 class="disposal-item-expiry"
                 :class="{
                   'expired': fridgeStore.isExpired(disposalDialogItem.expiryDate),
-                  'expiring': fridgeStore.isExpiringSoonItem(disposalDialogItem.expiryDate) && !fridgeStore.isExpired(disposalDialogItem.expiryDate)
+                  'expiring': fridgeStore.isExpiringSoonItem(disposalDialogItem) && !fridgeStore.isExpired(disposalDialogItem.expiryDate)
                 }"
               >
                 {{ fridgeStore.isExpired(disposalDialogItem.expiryDate) ? '已过期' : '还剩 ' + fridgeStore.daysUntilExpiry(disposalDialogItem.expiryDate) + ' 天' }}
@@ -1852,9 +1939,9 @@
               </div>
               <div class="detail-item-actions">
                 <button
-                  v-if="fridgeStore.isExpiringSoonItem(item.expiryDate) && !fridgeStore.isExpired(item.expiryDate)"
-                  class="btn btn-small btn-shopping"
-                  @click="handleCalendarAddToShopping(item)"
+                  v-if="fridgeStore.isExpiringSoonItem(item) && !fridgeStore.isExpired(item.expiryDate)"
+                    class="btn btn-small btn-shopping"
+                    @click="handleCalendarAddToShopping(item)"
                 >
                   🛒 补货
                 </button>
@@ -1999,13 +2086,16 @@ const expiringDialogForm = ref({ quantity: 1, unit: '个', store: '', unitPrice:
 const showSettings = ref(false)
 const settingsForm = ref({ 
   budgetLimit: 0, 
-  expiringDays: 3,
   defaultStore: '',
   quantityMultiplier: 1.5,
   autoAddToShopping: false,
   useLastPrice: true,
   notificationEnabled: false,
   notificationDays: 3
+})
+const showExpiryRulesDialog = ref(false)
+const expiryRulesForm = ref({
+  defaultDays: 3
 })
 const newStoreName = ref('')
 
@@ -2753,7 +2843,7 @@ function deleteItem(id) {
   const item = fridgeStore.getItemById(id)
   if (!item) return
   const isExpired = fridgeStore.isExpired(item.expiryDate)
-  const isExpiringSoon = fridgeStore.isExpiringSoonItem(item.expiryDate)
+  const isExpiringSoon = fridgeStore.isExpiringSoonItem(item)
   
   if (isExpired || isExpiringSoon) {
     disposalDialogItem.value = item
@@ -3107,7 +3197,6 @@ function clearPurchasedItems() {
 
 function openSettings() {
   settingsForm.value.budgetLimit = shoppingStore.budgetLimit
-  settingsForm.value.expiringDays = fridgeStore.expiringDays
   settingsForm.value.defaultStore = shoppingStore.replenishRules.defaultStore
   settingsForm.value.quantityMultiplier = shoppingStore.replenishRules.quantityMultiplier
   settingsForm.value.autoAddToShopping = shoppingStore.replenishRules.autoAddToShopping
@@ -3139,9 +3228,39 @@ function handleBudgetChange() {
   shoppingStore.setBudgetLimit(settingsForm.value.budgetLimit)
 }
 
-function handleExpiringDaysChange() {
-  shoppingStore.setExpiringDays(settingsForm.value.expiringDays)
-  fridgeStore.setExpiringDays(settingsForm.value.expiringDays)
+function openExpiryRulesDialog() {
+  expiryRulesForm.value.defaultDays = fridgeStore.expiringDays
+  showExpiryRulesDialog.value = true
+}
+
+function closeExpiryRulesDialog() {
+  showExpiryRulesDialog.value = false
+}
+
+function handleExpiryDefaultDaysChange() {
+  fridgeStore.setExpiringDays(expiryRulesForm.value.defaultDays)
+  shoppingStore.setExpiringDays(expiryRulesForm.value.defaultDays)
+}
+
+function handleExpiryZoneRuleChange(zone, event) {
+  const value = parseInt(event.target.value, 10)
+  if (!isNaN(value) && value >= 1) {
+    fridgeStore.setZoneExpiringDays(zone, value)
+  }
+}
+
+function handleExpiryCategoryRuleChange(categoryId, event) {
+  const value = parseInt(event.target.value, 10)
+  if (!isNaN(value) && value >= 1) {
+    fridgeStore.setCategoryExpiringDays(categoryId, value)
+  }
+}
+
+function handleResetExpiryRules() {
+  if (confirm('确定要恢复临期预警规则为默认值吗？所有自定义配置将丢失。')) {
+    fridgeStore.resetExpiryRules()
+    expiryRulesForm.value.defaultDays = fridgeStore.expiringDays
+  }
 }
 
 function handleDefaultStoreChange() {
@@ -7386,5 +7505,192 @@ watch(() => fridgeStore.notificationEnabled, (enabled) => {
   .calendar-legend {
     gap: 12px;
   }
+}
+
+.expiry-rules-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #fff8e1, #fff3e0);
+  border-radius: 10px;
+  border: 1px solid #ffe0b2;
+}
+
+.expiry-rules-summary {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.expiry-rules-detail {
+  font-size: 12px;
+  font-weight: 400;
+  color: #bf360c;
+  opacity: 0.7;
+}
+
+.expiry-rules-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.expiry-rules-dialog {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 640px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.expiry-rules-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-bottom: 1px solid #ffcc80;
+}
+
+.expiry-rules-dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #e65100;
+}
+
+.expiry-rules-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #e65100;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.expiry-rules-dialog-close:hover {
+  background: rgba(230, 81, 0, 0.1);
+}
+
+.expiry-rules-dialog-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.expiry-rules-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.expiry-rules-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.expiry-rules-section h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #37474f;
+}
+
+.expiry-rules-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: #90a4ae;
+  line-height: 1.5;
+}
+
+.expiry-rules-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.expiry-rules-row:last-child {
+  border-bottom: none;
+}
+
+.expiry-rules-row label {
+  font-size: 14px;
+  color: #546e7a;
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expiry-rules-input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expiry-rules-input-group input {
+  width: 80px;
+  padding: 6px 10px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.expiry-rules-input-group input:focus {
+  border-color: #00897b;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 137, 123, 0.15);
+}
+
+.expiry-rules-unit {
+  font-size: 13px;
+  color: #90a4ae;
+}
+
+.expiry-rules-cat-icon {
+  font-size: 14px;
+}
+
+.expiry-rules-category-group {
+  margin-bottom: 12px;
+}
+
+.expiry-rules-category-group:last-child {
+  margin-bottom: 0;
+}
+
+.expiry-rules-category-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #00796b;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: #e0f2f1;
+  border-radius: 6px;
+}
+
+.expiry-rules-dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
 }
 </style>
