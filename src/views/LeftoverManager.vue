@@ -105,7 +105,7 @@
             <div class="form-group">
               <label>预计到期日</label>
               <div class="expiry-preview">
-                <span :class="getExpiryClass(calculatedExpiryDate)">
+                <span :class="getExpiryClass(formItemForPreview)">
                   {{ formatDate(calculatedExpiryDate) }}
                   (还剩 {{ leftoverStore.daysUntilExpiry(calculatedExpiryDate) }} 天)
                 </span>
@@ -342,7 +342,7 @@
               :key="item.id"
               class="item-card"
               :class="{
-                'expiring-soon': leftoverStore.isExpiringSoonItem(item.expiryDate) && !leftoverStore.isExpired(item.expiryDate),
+                'expiring-soon': leftoverStore.isExpiringSoonItem(item) && !leftoverStore.isExpired(item.expiryDate),
                 'expired': leftoverStore.isExpired(item.expiryDate)
               }"
             >
@@ -362,7 +362,7 @@
                   已过期
                 </span>
                 <span
-                  v-else-if="leftoverStore.isExpiringSoonItem(item.expiryDate)"
+                  v-else-if="leftoverStore.isExpiringSoonItem(item)"
                   class="badge warning"
                 >
                   还剩 {{ leftoverStore.daysUntilExpiry(item.expiryDate) }} 天
@@ -568,6 +568,12 @@ const calculatedExpiryDate = computed(() => {
   return date.toISOString().split('T')[0]
 })
 
+const formItemForPreview = computed(() => ({
+  expiryDate: calculatedExpiryDate.value,
+  zone: form.value.zone,
+  categoryId: form.value.categoryId
+}))
+
 const calculatedExtendExpiry = computed(() => {
   if (!extendDialogItem.value) return ''
   const date = new Date(extendDialogItem.value.openDate)
@@ -601,7 +607,7 @@ const expiringItems = computed(() => {
 
 const freshItemsCount = computed(() => {
   return leftoverStore.items.filter(item =>
-    !leftoverStore.isExpiringSoonItem(item.expiryDate) && !leftoverStore.isExpired(item.expiryDate)
+    !leftoverStore.isExpiringSoonItem(item) && !leftoverStore.isExpired(item.expiryDate)
   ).length
 })
 
@@ -672,9 +678,10 @@ function formatDate(dateStr) {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
-function getExpiryClass(expiryDate) {
-  if (leftoverStore.isExpired(expiryDate)) return 'expired'
-  if (leftoverStore.isExpiringSoonItem(expiryDate)) return 'warning'
+function getExpiryClass(item) {
+  if (!item || !item.expiryDate) return 'normal'
+  if (leftoverStore.isExpired(item.expiryDate)) return 'expired'
+  if (leftoverStore.isExpiringSoonItem(item)) return 'warning'
   return 'normal'
 }
 
