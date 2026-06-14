@@ -299,6 +299,7 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
   const expiringItems = fridgeItems.filter(item =>
     isExpiringSoon(item.expiryDate) && !isExpired(item.expiryDate)
   )
+  const expiringTotal = expiringItems.length
 
   const scoredRecipes = recipes.map(recipe => {
     const matchedIngredients = []
@@ -306,6 +307,7 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
     let matchCount = 0
     let expiringMatchCount = 0
     let expiringUrgencyScore = 0
+    let wasteAvoidanceValue = 0
 
     recipe.ingredients.forEach(ing => {
       const matchedItem = fridgeItems.find(item => {
@@ -320,19 +322,33 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
 
         if (isExpiringItem && !isExpired(matchedItem.expiryDate)) {
           expiringMatchCount++
+          const daysLeft = daysUntilExpiry(matchedItem.expiryDate)
           matchedExpiringIngredients.push({
             name: ing.name,
-            daysLeft: daysUntilExpiry(matchedItem.expiryDate)
+            daysLeft
           })
-          const daysLeft = daysUntilExpiry(matchedItem.expiryDate)
-          expiringUrgencyScore += Math.max(0, 4 - daysLeft)
+          const urgencyWeight = Math.max(0, 7 - daysLeft)
+          expiringUrgencyScore += urgencyWeight
+          const itemValue = (matchedItem.quantity || 1) * (matchedItem.unitPrice || 0)
+          wasteAvoidanceValue += itemValue * (1 + urgencyWeight * 0.5)
         }
       }
     })
 
     const matchRatio = matchCount / recipe.ingredients.length
-    const expiringBonus = expiringMatchCount * 3 + expiringUrgencyScore
-    const priorityScore = matchCount + expiringBonus
+    const expiringCoverage = expiringTotal > 0 ? expiringMatchCount / expiringTotal : 0
+
+    const expiringCountBonus = expiringMatchCount * 10
+    const expiringUrgencyBonus = expiringUrgencyScore * 2
+    const expiringCoverageBonus = expiringCoverage * 8
+    const wasteValueBonus = wasteAvoidanceValue * 0.1
+
+    const expiringPriorityScore = expiringCountBonus + expiringUrgencyBonus + expiringCoverageBonus + wasteValueBonus
+    const baseMatchScore = matchCount * 2 + matchRatio * 3
+
+    const priorityScore = expiringMatchCount > 0
+      ? baseMatchScore + expiringPriorityScore + 100
+      : baseMatchScore
 
     return {
       ...recipe,
@@ -341,13 +357,20 @@ export function getRecipeSuggestions(fridgeItems, count = 2) {
       expiringMatchCount,
       matchedExpiringIngredients,
       expiringUrgencyScore,
+      expiringCoverage,
+      wasteAvoidanceValue,
       priorityScore
     }
   })
 
   scoredRecipes.sort((a, b) => {
+    if (b.expiringMatchCount > 0 && a.expiringMatchCount === 0) return 1
+    if (a.expiringMatchCount > 0 && b.expiringMatchCount === 0) return -1
     if (b.priorityScore !== a.priorityScore) {
       return b.priorityScore - a.priorityScore
+    }
+    if (b.expiringMatchCount !== a.expiringMatchCount) {
+      return b.expiringMatchCount - a.expiringMatchCount
     }
     if (b.matchCount !== a.matchCount) {
       return b.matchCount - a.matchCount
