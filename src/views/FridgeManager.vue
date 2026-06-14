@@ -2792,9 +2792,10 @@ function cancelDisposal() {
 function useItem(item) {
   const amount = parseFloat(prompt(`消耗多少 ${item.unit}？`, '1'))
   if (isNaN(amount) || amount <= 0) return
+  const actualAmount = Math.min(amount, item.quantity)
   purchaseCostStore.addConsumptionRecord({
     name: item.name,
-    quantity: amount,
+    quantity: actualAmount,
     unit: item.unit,
     type: 'consumed',
     categoryId: item.categoryId,
@@ -2802,7 +2803,21 @@ function useItem(item) {
     parentCategoryId: item.parentCategoryId,
     parentCategoryName: item.parentCategoryName
   })
-  const newQuantity = Math.max(0, item.quantity - amount)
+  wasteRecordStore.addRecord({
+    name: item.name,
+    quantity: actualAmount,
+    unit: item.unit,
+    zone: item.zone,
+    reason: 'natural_consumption',
+    disposalNote: '正常消耗',
+    expiryDate: item.expiryDate,
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    parentCategoryId: item.parentCategoryId,
+    parentCategoryName: item.parentCategoryName,
+    nutritionTags: item.nutritionTags
+  })
+  const newQuantity = Math.max(0, item.quantity - actualAmount)
   if (newQuantity === 0) {
     if (confirm('用量已归零，是否删除？')) {
       fridgeStore.removeItem(item.id)

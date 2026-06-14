@@ -172,6 +172,46 @@
           </div>
         </div>
 
+        <div class="expired-category-ranking card" v-if="expiredCategoryRanking.length > 0">
+          <h2>⏰ 常过期品类排行</h2>
+          <p class="ranking-subtitle">按月过期次数排序，靠前的品类需重点关注</p>
+          <div class="category-ranking-list">
+            <div
+              v-for="(cat, index) in expiredCategoryRanking"
+              :key="cat.categoryName"
+              class="category-ranking-item"
+            >
+              <div class="ranking-header">
+                <span class="ranking-badge" :class="'rank-' + Math.min(index + 1, 3)">
+                  {{ index + 1 }}
+                </span>
+                <span class="ranking-category-name">{{ cat.categoryName }}</span>
+                <span class="ranking-count">
+                  <span class="count-num">{{ cat.expiredCount }}</span>
+                  <span class="count-label">次过期</span>
+                </span>
+              </div>
+              <div class="ranking-detail">
+                <span class="detail-label">涉及食材：</span>
+                <span class="detail-items">
+                  {{ cat.items.map(i => i.name).slice(0, 3).join('、') }}
+                  <span v-if="cat.items.length > 3">等{{ cat.items.length }}种</span>
+                </span>
+              </div>
+              <div v-if="cat.subCategories.length > 0" class="ranking-sub-cats">
+                <span class="sub-cat-label">子类分布：</span>
+                <span
+                  v-for="sub in cat.subCategories.slice(0, 3)"
+                  :key="sub.name"
+                  class="sub-cat-tag"
+                >
+                  {{ sub.name }} ×{{ sub.count }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="top-wasted card" v-if="currentSummary.topWastedItems.length > 0">
           <h2>🔥 高频浪费食材 TOP5</h2>
           <div class="top-list">
@@ -271,6 +311,11 @@ const currentSummary = computed(() => {
     return { month: '', totalCount: 0, expiredCount: 0, discardedCount: 0, byZone: {}, topWastedItems: [], details: [] }
   }
   return wasteStore.getMonthlySummary(selectedMonth.value, selectedZone.value)
+})
+
+const expiredCategoryRanking = computed(() => {
+  if (!selectedMonth.value) return []
+  return wasteStore.getExpiredCategoryRanking(selectedMonth.value, selectedZone.value)
 })
 
 const trendData = computed(() => {
@@ -742,6 +787,115 @@ function formatDateTime(isoStr) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.expired-category-ranking .ranking-subtitle {
+  font-size: 13px;
+  color: #90a4ae;
+  margin: -8px 0 16px;
+}
+
+.category-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-ranking-item {
+  padding: 14px 16px;
+  background: #fff8e1;
+  border-radius: 10px;
+  border: 1px solid #ffecb3;
+}
+
+.ranking-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ranking-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #b0bec5;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ranking-badge.rank-1 {
+  background: linear-gradient(135deg, #e65100, #ff9800);
+}
+
+.ranking-badge.rank-2 {
+  background: linear-gradient(135deg, #f57c00, #ffb74d);
+}
+
+.ranking-badge.rank-3 {
+  background: linear-gradient(135deg, #f9a825, #ffd54f);
+}
+
+.ranking-category-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 15px;
+  color: #e65100;
+}
+
+.ranking-count {
+  text-align: right;
+}
+
+.ranking-count .count-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e65100;
+}
+
+.ranking-count .count-label {
+  font-size: 12px;
+  color: #90a4ae;
+  margin-left: 2px;
+}
+
+.ranking-detail {
+  font-size: 13px;
+  color: #78909c;
+  margin-bottom: 6px;
+}
+
+.ranking-detail .detail-label {
+  color: #90a4ae;
+}
+
+.ranking-detail .detail-items {
+  color: #546e7a;
+}
+
+.ranking-sub-cats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sub-cat-label {
+  color: #90a4ae;
+}
+
+.sub-cat-tag {
+  padding: 2px 8px;
+  background: #ffe0b2;
+  color: #e65100;
+  border-radius: 10px;
+  font-weight: 500;
 }
 
 .top-item {

@@ -417,6 +417,54 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
       .sort((a, b) => a.month.localeCompare(b.month))
   }
 
+  function getExpiredCategoryRanking(month, zoneFilter = '全部') {
+    let filtered = records.value.filter(r => r.month === month && r.reason === 'expired')
+    if (zoneFilter !== '全部') {
+      filtered = filtered.filter(r => r.zone === zoneFilter)
+    }
+
+    const byCategory = {}
+    filtered.forEach(r => {
+      const catName = r.parentCategoryName || '未分类'
+      const subCatName = r.categoryName || '未分类'
+      if (!byCategory[catName]) {
+        byCategory[catName] = {
+          categoryName: catName,
+          expiredCount: 0,
+          expiredQty: 0,
+          items: {},
+          subCategories: {}
+        }
+      }
+      byCategory[catName].expiredCount++
+      byCategory[catName].expiredQty += r.quantity
+      
+      if (!byCategory[catName].items[r.name]) {
+        byCategory[catName].items[r.name] = { count: 0, quantity: 0, unit: r.unit }
+      }
+      byCategory[catName].items[r.name].count++
+      byCategory[catName].items[r.name].quantity += r.quantity
+
+      if (!byCategory[catName].subCategories[subCatName]) {
+        byCategory[catName].subCategories[subCatName] = { count: 0, quantity: 0 }
+      }
+      byCategory[catName].subCategories[subCatName].count++
+      byCategory[catName].subCategories[subCatName].quantity += r.quantity
+    })
+
+    return Object.values(byCategory)
+      .map(cat => ({
+        ...cat,
+        items: Object.entries(cat.items)
+          .map(([name, data]) => ({ name, ...data }))
+          .sort((a, b) => b.count - a.count),
+        subCategories: Object.entries(cat.subCategories)
+          .map(([name, data]) => ({ name, ...data }))
+          .sort((a, b) => b.count - a.count)
+      }))
+      .sort((a, b) => b.expiredCount - a.expiredCount)
+  }
+
   watch(
     records,
     (newRecords) => {
@@ -435,6 +483,7 @@ export const useWasteRecordStore = defineStore('wasteRecord', () => {
     getMonthlyWasteAnalysis,
     getWasteDimensionAnalysis,
     getWasteTrendWithFilters,
+    getExpiredCategoryRanking,
     getDisposalReasonInfo
   }
 })
